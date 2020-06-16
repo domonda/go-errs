@@ -8,7 +8,7 @@ import (
 )
 
 func funcA(ctx context.Context, i int, s string) (err error) {
-	defer WrapWithFuncParams(&err, ctx, i, s)
+	defer WrapWith3FuncParams(&err, ctx, i, s)
 
 	return funcB(s, "X\nX")
 }
@@ -40,8 +40,8 @@ func ExampleWrapWithFuncParams() {
 	// error in funcC
 	// github.com/domonda/go-errs.funcC()
 	//     github.com/domonda/go-errs/wrapwithfuncparams_test.go:25
-	// github.com/domonda/go-errs.funcB([]string{"Hello World!", "X\nX"})
+	// github.com/domonda/go-errs.funcB(['Hello World!','X\nX'])
 	//     github.com/domonda/go-errs/wrapwithfuncparams_test.go:19
-	// github.com/domonda/go-errs.funcA(Context{Err:<nil>}, 666, "Hello World!")
+	// github.com/domonda/go-errs.funcA(Context{}, 666, 'Hello World!')
 	//     github.com/domonda/go-errs/wrapwithfuncparams_test.go:13
 }

@@ -2,6 +2,14 @@ github.com/davecgh/go-spew v1.1.0 h1:ZDRjVQ15GmhC3fiQ8ni8+OwkZQO4DARzQgrnXU1Liz8
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/domonda/go-pretty v0.0.0-20200612155843-48d52993fff9 h1:/XsDwD7fA5uLviOYcOb+emZV3+NQioxVbUMlkS0GfEI=
 github.com/domonda/go-pretty v0.0.0-20200612155843-48d52993fff9/go.mod h1:zUVOQL+81aMK+Ye3kS7eDsk/aWnteWRSJ5fZWHdBWjc=
+github.com/domonda/go-pretty v0.0.0-20200616105859-2e2708cd013c h1:EJmdE2SFuBIJZi/GQz2eaZuSFEl/vupkSsTaeGsDoTA=
+github.com/domonda/go-pretty v0.0.0-20200616105859-2e2708cd013c/go.mod h1:zUVOQL+81aMK+Ye3kS7eDsk/aWnteWRSJ5fZWHdBWjc=
+github.com/domonda/go-pretty v0.0.0-20200616113236-5188ec2d3924 h1:Nh+Rv13dSr9Si0WU4uhbjH7nMPbGfEiavtFerIWDk6Q=
+github.com/domonda/go-pretty v0.0.0-20200616113236-5188ec2d3924/go.mod h1:zUVOQL+81aMK+Ye3kS7eDsk/aWnteWRSJ5fZWHdBWjc=
+github.com/domonda/go-pretty v0.0.0-20200616114436-ed6ae4894b56 h1:9N4Erxqb0THAJUeDDeUMaRmIDmGGNa1awpM68jIHK44=
+github.com/domonda/go-pretty v0.0.0-20200616114436-ed6ae4894b56/go.mod h1:zUVOQL+81aMK+Ye3kS7eDsk/aWnteWRSJ5fZWHdBWjc=
+github.com/domonda/go-pretty v0.0.0-20200616115312-a788f8510574 h1:h3queBSW4x9BhPncDyNMDuQrwF6597uRInnhGgttqTo=
+github.com/domonda/go-pretty v0.0.0-20200616115312-a788f8510574/go.mod h1:zUVOQL+81aMK+Ye3kS7eDsk/aWnteWRSJ5fZWHdBWjc=
 github.com/pmezard/go-difflib v1.0.0 h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZbAQM=
 github.com/pmezard/go-difflib v1.0.0/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4=
 github.com/stretchr/objx v0.1.0/go.mod h1:HFkY916IF+rwdDfMAkV7OtwuqBVzrE8GR6GFx+wExME=
