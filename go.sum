@@ -10,6 +10,8 @@ github.com/domonda/go-pretty v0.0.0-20200616114436-ed6ae4894b56 h1:9N4Erxqb0THAJ
 github.com/domonda/go-pretty v0.0.0-20200616114436-ed6ae4894b56/go.mod h1:zUVOQL+81aMK+Ye3kS7eDsk/aWnteWRSJ5fZWHdBWjc=
 github.com/domonda/go-pretty v0.0.0-20200616115312-a788f8510574 h1:h3queBSW4x9BhPncDyNMDuQrwF6597uRInnhGgttqTo=
 github.com/domonda/go-pretty v0.0.0-20200616115312-a788f8510574/go.mod h1:zUVOQL+81aMK+Ye3kS7eDsk/aWnteWRSJ5fZWHdBWjc=
+github.com/domonda/go-pretty v0.0.0-20200617111510-7c4cfaba7487 h1:yQtp1Zegz7ZBB1TFwTeccyihpQQsKZzUAH8kgFyMxrU=
+github.com/domonda/go-pretty v0.0.0-20200617111510-7c4cfaba7487/go.mod h1:zUVOQL+81aMK+Ye3kS7eDsk/aWnteWRSJ5fZWHdBWjc=
 github.com/pmezard/go-difflib v1.0.0 h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZbAQM=
 github.com/pmezard/go-difflib v1.0.0/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4=
 github.com/stretchr/objx v0.1.0/go.mod h1:HFkY916IF+rwdDfMAkV7OtwuqBVzrE8GR6GFx+wExME=
