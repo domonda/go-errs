@@ -35,3 +35,14 @@ func ShouldLog(err error) bool {
 	}
 	return true
 }
+
+// DontLog wraps the passed error as LogDecisionMaker
+// so that ShouldLog returns false.
+func DontLog(err error) error {
+	return dontLog{err}
+}
+
+type dontLog struct{ error }
+
+func (dontLog) ShouldLog() bool { return false }
+func (e dontLog) Unwrap() error { return e.error }

@@ -26,6 +26,7 @@ func TestShouldLog(t *testing.T) {
 		{"non LogDecisionMaker", errors.New("non LogDecisionMaker"), true},
 		{"true", testDecisionMaker(true), true},
 		{"false", testDecisionMaker(false), false},
+		{"dont log", DontLog(testDecisionMaker(true)), false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
