@@ -21,7 +21,7 @@ type LogDecisionMaker interface {
 
 // ShouldLog checks if the passed error unwraps
 // as a LogDecisionMaker and returns the result
-// its ShouldLog method.
+// of its ShouldLog method.
 // If error does not unwrap to LogDecisionMaker
 // and is not nil then ShouldLog returns true.
 // If nil is passed as error, then ShouldLog returns false.
