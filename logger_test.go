@@ -23,7 +23,7 @@ func TestShouldLog(t *testing.T) {
 		want bool
 	}{
 		{"nil", nil, false},
-		{"non LogDecisionMaker", errors.New("non LogDecisionMaker"), false},
+		{"non LogDecisionMaker", errors.New("non LogDecisionMaker"), true},
 		{"true", testDecisionMaker(true), true},
 		{"false", testDecisionMaker(false), false},
 	}
