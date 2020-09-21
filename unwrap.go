@@ -16,6 +16,18 @@ func Root(err error) error {
 	}
 }
 
+// UnwrapCallStack unwraps callstack information from err
+// and returns the first non callstack wrapper error.
+// It does not remove callstack wrapping further down the
+// wrapping chain if the top error
+// is not wrapped with callstack information.
+func UnwrapCallStack(err error) error {
+	for p, ok := err.(callStackProvider); ok; p, ok = err.(callStackProvider) {
+		err = p.Unwrap()
+	}
+	return err
+}
+
 // IsType returns if err or any unwrapped error
 // is of the type of the passed target error.
 // It returns the same result as errors.As
