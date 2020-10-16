@@ -29,17 +29,18 @@ func UnwrapCallStack(err error) error {
 }
 
 // IsType returns if err or any unwrapped error
-// is of the type of the passed target error.
-// It returns the same result as errors.As
-// without assigning to the target error.
-func IsType(err, target error) bool {
-	if err == target {
+// is of the type of the passed ref error.
+// It works similar than errors.As but
+// without assigning to the ref error
+// and without checking for Is or As methods.
+func IsType(err, ref error) bool {
+	if err == ref {
 		return true
 	}
 	if err == nil {
 		return false
 	}
-	t := reflect.TypeOf(target)
+	t := reflect.TypeOf(ref)
 	for {
 		if reflect.TypeOf(err) == t {
 			return true
