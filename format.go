@@ -67,7 +67,7 @@ func formatCallStackParams(e callStackParamsProvider) string {
 	}
 	return fmt.Sprintf(
 		"%s\n    %s:%d",
-		FormatFunctionCall(frame.Function, params),
+		FormatFunctionCall(frame.Function, params...),
 		frame.File,
 		frame.Line,
 	)
@@ -76,7 +76,7 @@ func formatCallStackParams(e callStackParamsProvider) string {
 // FormatFunctionCall formats a function call in pseudo syntax
 // using github.com/domonda/go-pretty to format the params.
 // Used to format errors with function call stack information.
-func FormatFunctionCall(function string, params []interface{}) string {
+func FormatFunctionCall(function string, params ...interface{}) string {
 	var b strings.Builder
 	b.WriteString(function)
 	b.WriteByte('(')
