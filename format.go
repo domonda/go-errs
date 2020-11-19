@@ -66,21 +66,26 @@ func formatCallStackParams(e callStackParamsProvider) string {
 		return "insufficient call stack"
 	}
 	return fmt.Sprintf(
-		"%s(%s)\n    %s:%d",
-		frame.Function,
-		formatParams(params),
+		"%s\n    %s:%d",
+		FormatFunctionCall(frame.Function, params),
 		frame.File,
 		frame.Line,
 	)
 }
 
-func formatParams(params []interface{}) string {
+// FormatFunctionCall formats a function call in pseudo syntax
+// using github.com/domonda/go-pretty to format the params.
+// Used to format errors with function call stack information.
+func FormatFunctionCall(function string, params []interface{}) string {
 	var b strings.Builder
+	b.WriteString(function)
+	b.WriteByte('(')
 	for i, param := range params {
 		if i > 0 {
 			b.WriteString(", ")
 		}
 		pretty.Fprint(&b, param)
 	}
+	b.WriteByte(')')
 	return b.String()
 }
