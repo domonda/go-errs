@@ -52,7 +52,7 @@ func WrapWith0FuncParams(resultVar *error) {
 	}
 }
 
-func WrapWith1FuncParams(resultVar *error, p0 interface{}) {
+func WrapWith1FuncParam(resultVar *error, p0 interface{}) {
 	if *resultVar != nil {
 		*resultVar = wrapWithFuncParamsSkip(1, *resultVar, p0)
 	}
