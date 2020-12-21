@@ -7,15 +7,29 @@ import (
 )
 
 // ErrNotFound is an universal error returned in case
-// that a requested resource could not been found.
+// that a requested resource could not be found.
 //
-// Wrap this error to create custom "not found" errors
-// and test them with IsErrNotFound instead of errors.Is(err, ErrNotFound)
-// to also catch the standard library errors sql.ErrNoRows and os.ErrNotExist.
+// Recommended usage:
+//
+// This error can be returned directly from a function
+// if that function only requests one kind of resource
+// and no further differentiation is needed about what
+// resource could not be found.
+//
+// Else create custom "not found" error by wrapping ErrNotFound
+// or implementing a custom error type with an
+//   Is(target error) bool
+// method that returns true for target == ErrNotFound.
+//
+// For checking errors it is recommended to use IsErrNotFound(err)
+// instead of errors.Is(err, ErrNotFound) to also catch the
+// standard library "not found" errors sql.ErrNoRows and os.ErrNotExist.
 const ErrNotFound Sentinel = "not found"
 
 // IsErrNotFound returns true if the passed error
 // unwraps to, or is ErrNotFound, sql.ErrNoRows, or os.ErrNotExist.
 func IsErrNotFound(err error) bool {
-	return errors.Is(err, ErrNotFound) || errors.Is(err, sql.ErrNoRows) || errors.Is(err, os.ErrNotExist)
+	return errors.Is(err, ErrNotFound) ||
+		errors.Is(err, sql.ErrNoRows) ||
+		errors.Is(err, os.ErrNotExist)
 }
