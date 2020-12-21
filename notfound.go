@@ -33,3 +33,15 @@ func IsErrNotFound(err error) bool {
 		errors.Is(err, sql.ErrNoRows) ||
 		errors.Is(err, os.ErrNotExist)
 }
+
+// ReplaceErrNotFound returns the passed replacement error
+// if IsErrNotFound(err) returns true,
+// meaning that all (optionally wrapped)
+// ErrNotFound, sql.ErrNoRows, os.ErrNotExist
+// errors get replaced.
+func ReplaceErrNotFound(err, replacement error) error {
+	if IsErrNotFound(err) {
+		return replacement
+	}
+	return err
+}
