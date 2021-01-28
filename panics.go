@@ -1,7 +1,9 @@
 package errs
 
 import (
+	"errors"
 	"fmt"
+	"runtime/debug"
 
 	"github.com/domonda/go-pretty"
 )
@@ -14,11 +16,11 @@ func AsError(val interface{}) error {
 	case error:
 		return x
 	case string:
-		return Sentinel(x)
+		return errors.New(x)
 	case fmt.Stringer:
-		return Sentinel(x.String())
+		return errors.New(x.String())
 	default:
-		return Sentinel(pretty.Sprint(val))
+		return errors.New(pretty.Sprint(val))
 	}
 }
 
@@ -28,7 +30,8 @@ func LogPanicWithFuncParams(log Logger, params ...interface{}) {
 		return
 	}
 
-	err := wrapWithFuncParamsSkip(1, AsError(p), params...)
+	err := fmt.Errorf("%v\n%s", p, debug.Stack())
+	err = wrapWithFuncParamsSkip(1, err, params...)
 
 	log.Printf("LogPanicWithFuncParams: %s", err.Error())
 
@@ -41,7 +44,8 @@ func RecoverAndLogPanicWithFuncParams(log Logger, params ...interface{}) {
 		return
 	}
 
-	err := wrapWithFuncParamsSkip(1, AsError(p), params...)
+	err := fmt.Errorf("%v\n%s", p, debug.Stack())
+	err = wrapWithFuncParamsSkip(1, err, params...)
 
 	log.Printf("RecoverAndLogPanicWithFuncParams: %s", err.Error())
 }
@@ -52,11 +56,11 @@ func RecoverPanicAsErrorWithFuncParams(resultVar *error, params ...interface{}) 
 		return
 	}
 
-	err := wrapWithFuncParamsSkip(1, AsError(p), params...)
-
+	err := fmt.Errorf("%v\n%s", p, debug.Stack())
+	err = wrapWithFuncParamsSkip(1, err, params...)
 	if *resultVar != nil {
-		*resultVar = fmt.Errorf("function returning error %s paniced with: %w", *resultVar, err)
-	} else {
-		*resultVar = err
+		err = fmt.Errorf("function returning error (%s) paniced with: %w", *resultVar, err)
 	}
+
+	*resultVar = err
 }
