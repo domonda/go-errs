@@ -30,7 +30,7 @@ func LogPanicWithFuncParams(log Logger, params ...interface{}) {
 		return
 	}
 
-	err := fmt.Errorf("%v\n%s", p, debug.Stack())
+	err := fmt.Errorf("%w\n%s", AsError(p), debug.Stack())
 	err = wrapWithFuncParamsSkip(1, err, params...)
 
 	log.Printf("LogPanicWithFuncParams: %s", err.Error())
@@ -44,7 +44,7 @@ func RecoverAndLogPanicWithFuncParams(log Logger, params ...interface{}) {
 		return
 	}
 
-	err := fmt.Errorf("%v\n%s", p, debug.Stack())
+	err := fmt.Errorf("%w\n%s", AsError(p), debug.Stack())
 	err = wrapWithFuncParamsSkip(1, err, params...)
 
 	log.Printf("RecoverAndLogPanicWithFuncParams: %s", err.Error())
@@ -56,7 +56,7 @@ func RecoverPanicAsErrorWithFuncParams(resultVar *error, params ...interface{}) 
 		return
 	}
 
-	err := fmt.Errorf("%v\n%s", p, debug.Stack())
+	err := fmt.Errorf("%w\n%s", AsError(p), debug.Stack())
 	err = wrapWithFuncParamsSkip(1, err, params...)
 	if *resultVar != nil {
 		err = fmt.Errorf("function returning error (%s) paniced with: %w", *resultVar, err)
