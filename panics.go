@@ -8,9 +8,9 @@ import (
 	"github.com/domonda/go-pretty"
 )
 
-// AsError converts val to an error without wrapping it.
-func AsError(val interface{}) error {
-	switch x := val.(type) {
+// AsError converts any type to an error without wrapping it.
+func AsError(any interface{}) error {
+	switch x := any.(type) {
 	case nil:
 		return nil
 	case error:
@@ -20,10 +20,16 @@ func AsError(val interface{}) error {
 	case fmt.Stringer:
 		return errors.New(x.String())
 	default:
-		return errors.New(pretty.Sprint(val))
+		return errors.New(pretty.Sprint(any))
 	}
 }
 
+// LogPanicWithFuncParams recovers any panic,
+// converts it to an error wrapped with the callstack
+// of the panic and the passed function parameter values
+// and prints it with the prefix "LogPanicWithFuncParams: "
+// to the passed Logger.
+// After logging, the original panic is re-paniced.
 func LogPanicWithFuncParams(log Logger, params ...interface{}) {
 	p := recover()
 	if p == nil {
@@ -38,6 +44,11 @@ func LogPanicWithFuncParams(log Logger, params ...interface{}) {
 	panic(p)
 }
 
+// RecoverAndLogPanicWithFuncParams recovers any panic,
+// converts it to an error wrapped with the callstack
+// of the panic and the passed function parameter values
+// and prints it with the prefix "RecoverAndLogPanicWithFuncParams: "
+// to the passed Logger.
 func RecoverAndLogPanicWithFuncParams(log Logger, params ...interface{}) {
 	p := recover()
 	if p == nil {
@@ -50,7 +61,28 @@ func RecoverAndLogPanicWithFuncParams(log Logger, params ...interface{}) {
 	log.Printf("RecoverAndLogPanicWithFuncParams: %s", err.Error())
 }
 
-func RecoverPanicAsErrorWithFuncParams(resultVar *error, params ...interface{}) {
+// RecoverPanicAsError recovers any panic,
+// converts it to an error wrapped with the callstack
+// of the panic and assigns it to the result error.
+func RecoverPanicAsError(result *error) {
+	p := recover()
+	if p == nil {
+		return
+	}
+
+	err := fmt.Errorf("%w\n%s", AsError(p), debug.Stack())
+	if *result != nil {
+		err = fmt.Errorf("function returning error (%s) paniced with: %w", *result, err)
+	}
+
+	*result = err
+}
+
+// RecoverPanicAsErrorWithFuncParams recovers any panic,
+// converts it to an error wrapped with the callstack
+// of the panic and the passed function parameter values
+// and assigns it to the result error.
+func RecoverPanicAsErrorWithFuncParams(result *error, params ...interface{}) {
 	p := recover()
 	if p == nil {
 		return
@@ -58,9 +90,9 @@ func RecoverPanicAsErrorWithFuncParams(resultVar *error, params ...interface{}) 
 
 	err := fmt.Errorf("%w\n%s", AsError(p), debug.Stack())
 	err = wrapWithFuncParamsSkip(1, err, params...)
-	if *resultVar != nil {
-		err = fmt.Errorf("function returning error (%s) paniced with: %w", *resultVar, err)
+	if *result != nil {
+		err = fmt.Errorf("function returning error (%s) paniced with: %w", *result, err)
 	}
 
-	*resultVar = err
+	*result = err
 }
