@@ -34,7 +34,7 @@ func formatError(err error) string {
 
 	if firstWithoutStack == nil {
 		// Should never happen, just to make sure we don't panic
-		firstWithoutStack = errors.New("wraperr: no wrapped error found")
+		firstWithoutStack = errors.New("no wrapped error found")
 	}
 
 	var b strings.Builder
@@ -54,7 +54,7 @@ func formatCallStack(e callStackProvider) string {
 	return fmt.Sprintf(
 		"%s\n    %s:%d",
 		frame.Function,
-		frame.File,
+		strings.TrimPrefix(frame.File, TrimFilePathPrefix),
 		frame.Line,
 	)
 }
@@ -68,7 +68,7 @@ func formatCallStackParams(e callStackParamsProvider) string {
 	return fmt.Sprintf(
 		"%s\n    %s:%d",
 		FormatFunctionCall(frame.Function, params...),
-		frame.File,
+		strings.TrimPrefix(frame.File, TrimFilePathPrefix),
 		frame.Line,
 	)
 }
