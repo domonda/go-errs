@@ -15,6 +15,8 @@ func AsError(any interface{}) error {
 		return nil
 	case error:
 		return x
+	case []error:
+		return Combine(x...)
 	case string:
 		return errors.New(x)
 	case fmt.Stringer:
