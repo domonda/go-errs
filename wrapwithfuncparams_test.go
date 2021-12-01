@@ -30,9 +30,9 @@ func ExampleWrapWithFuncParams() {
 	// Output:
 	// error in funcC
 	// github.com/domonda/go-errs.funcC()
-	//     github.com/domonda/go-errs/wrapwithfuncparams_test.go:23
+	//     src/github.com/domonda/go-errs/wrapwithfuncparams_test.go:23
 	// github.com/domonda/go-errs.funcB([`Hello World!`,"X\nX"])
-	//     github.com/domonda/go-errs/wrapwithfuncparams_test.go:17
+	//     src/github.com/domonda/go-errs/wrapwithfuncparams_test.go:17
 	// github.com/domonda/go-errs.funcA(Context{}, 666, `Hello World!`)
-	//     github.com/domonda/go-errs/wrapwithfuncparams_test.go:11
+	//     src/github.com/domonda/go-errs/wrapwithfuncparams_test.go:11
 }
