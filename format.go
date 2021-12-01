@@ -38,9 +38,11 @@ func formatError(err error) string {
 	}
 
 	var b strings.Builder
-	fmt.Fprintln(&b, firstWithoutStack.Error())
+	b.WriteString(firstWithoutStack.Error()) // #nosec
+	b.WriteByte('\n')                        // #nosec
 	for i := len(calls) - 1; i >= 0; i-- {
-		fmt.Fprintln(&b, calls[i])
+		b.WriteString(calls[i]) // #nosec
+		b.WriteByte('\n')       // #nosec
 	}
 	return b.String()
 }

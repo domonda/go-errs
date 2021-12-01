@@ -24,7 +24,8 @@ func funcC() (err error) {
 }
 
 func ExampleWrapWithFuncParams() {
-	fmt.Println(funcA(context.Background(), 666, "Hello World!"))
+	err := funcA(context.Background(), 666, "Hello World!")
+	fmt.Println(err)
 
 	// Output:
 	// error in funcC
