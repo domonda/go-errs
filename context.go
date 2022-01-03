@@ -36,3 +36,10 @@ func IsContextDone(ctx context.Context) bool {
 		return false
 	}
 }
+
+// IsContextError returns true if err unwraps to
+// context.Canceled or context.DeadlineExceeded.
+func IsContextError(err error) bool {
+	return err != nil &&
+		(errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded))
+}
