@@ -38,11 +38,11 @@ func formatError(err error) string {
 	}
 
 	var b strings.Builder
-	b.WriteString(firstWithoutStack.Error()) // #nosec
-	b.WriteByte('\n')                        // #nosec
+	b.WriteString(firstWithoutStack.Error()) //#nosec
+	b.WriteByte('\n')                        //#nosec
 	for i := len(calls) - 1; i >= 0; i-- {
-		b.WriteString(calls[i]) // #nosec
-		b.WriteByte('\n')       // #nosec
+		b.WriteString(calls[i]) //#nosec
+		b.WriteByte('\n')       //#nosec
 	}
 	return b.String()
 }
