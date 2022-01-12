@@ -8,6 +8,9 @@ import (
 )
 
 func ExampleErrNotFound() {
+	var ErrUserNotFound = fmt.Errorf("user %w", ErrNotFound)
+	fmt.Println(`IsErrNotFound(ErrUserNotFound):`, IsErrNotFound(ErrUserNotFound))
+
 	fmt.Println(`IsErrNotFound(ErrNotFound):`, IsErrNotFound(ErrNotFound))
 	fmt.Println(`IsErrNotFound(sql.ErrNoRows):`, IsErrNotFound(sql.ErrNoRows))
 	fmt.Println(`IsErrNotFound(os.ErrNotExist):`, IsErrNotFound(os.ErrNotExist))
@@ -19,6 +22,7 @@ func ExampleErrNotFound() {
 	fmt.Println(`errors.Is(os.ErrNotExist, ErrNotFound):`, errors.Is(os.ErrNotExist, ErrNotFound))
 
 	// Output:
+	// IsErrNotFound(ErrUserNotFound): true
 	// IsErrNotFound(ErrNotFound): true
 	// IsErrNotFound(sql.ErrNoRows): true
 	// IsErrNotFound(os.ErrNotExist): true

@@ -6,13 +6,13 @@ import (
 )
 
 func ExampleSentinel() {
-	const ErrUserNotFound Sentinel = "user not found"
+	const ErrUserAlreadyExists Sentinel = "user already exists"
 
-	var err error = ErrUserNotFound
-	fmt.Println("const Sentinel errors.Is:", errors.Is(err, ErrUserNotFound))
+	var err error = ErrUserAlreadyExists
+	fmt.Println("const Sentinel errors.Is:", errors.Is(err, ErrUserAlreadyExists))
 
-	err = fmt.Errorf("%w: user@example.com", ErrUserNotFound)
-	fmt.Println("Wrapped Sentinel errors.Is:", errors.Is(err, ErrUserNotFound))
+	err = fmt.Errorf("%w: user@example.com", ErrUserAlreadyExists)
+	fmt.Println("Wrapped Sentinel errors.Is:", errors.Is(err, ErrUserAlreadyExists))
 
 	// Output:
 	// const Sentinel errors.Is: true
