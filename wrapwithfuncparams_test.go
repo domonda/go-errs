@@ -5,8 +5,12 @@ import (
 	"fmt"
 )
 
-func funcA(ctx context.Context, i int, s string) (err error) {
-	defer WrapWith3FuncParams(&err, ctx, i, s)
+type strct struct {
+	A int
+}
+
+func funcA(ctx context.Context, i int, s string, strct *strct) (err error) {
+	defer WrapWith4FuncParams(&err, ctx, i, s, strct)
 
 	return funcB(s, "X\nX")
 }
@@ -24,15 +28,15 @@ func funcC() (err error) {
 }
 
 func ExampleWrapWithFuncParams() {
-	err := funcA(context.Background(), 666, "Hello World!")
+	err := funcA(context.Background(), 666, "Hello World!", &strct{A: -1})
 	fmt.Println(err)
 
 	// Output:
 	// error in funcC
 	// github.com/domonda/go-errs.funcC()
-	//     src/github.com/domonda/go-errs/wrapwithfuncparams_test.go:23
+	//     src/github.com/domonda/go-errs/wrapwithfuncparams_test.go:27
 	// github.com/domonda/go-errs.funcB([`Hello World!`,"X\nX"])
-	//     src/github.com/domonda/go-errs/wrapwithfuncparams_test.go:17
-	// github.com/domonda/go-errs.funcA(Context{}, 666, `Hello World!`)
-	//     src/github.com/domonda/go-errs/wrapwithfuncparams_test.go:11
+	//     src/github.com/domonda/go-errs/wrapwithfuncparams_test.go:21
+	// github.com/domonda/go-errs.funcA(Context{}, 666, `Hello World!`, strct{A:-1})
+	//     src/github.com/domonda/go-errs/wrapwithfuncparams_test.go:15
 }
