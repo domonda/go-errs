@@ -1,10 +1,8 @@
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
-github.com/domonda/go-pretty v0.0.0-20210202131827-b4ff5dbd12fd h1:OGFdhMFO54EShn6noeylOpXu3J2ZEt1K05qlsgpR9L0=
-github.com/domonda/go-pretty v0.0.0-20210202131827-b4ff5dbd12fd/go.mod h1:zUVOQL+81aMK+Ye3kS7eDsk/aWnteWRSJ5fZWHdBWjc=
-github.com/domonda/go-pretty v0.0.0-20220112155939-e3708bbb291e h1:78yCSuJugiciDvOGjaY3IVa8zz7qVLTRvYLnafT1USA=
-github.com/domonda/go-pretty v0.0.0-20220112155939-e3708bbb291e/go.mod h1:zUVOQL+81aMK+Ye3kS7eDsk/aWnteWRSJ5fZWHdBWjc=
+github.com/domonda/go-pretty v0.0.0-20220203100132-3f8f79e7d8f0 h1:tyTBEXBnC6eBnL7iIxkdKuFrLo4JGuoxJs3eKuRXiHM=
+github.com/domonda/go-pretty v0.0.0-20220203100132-3f8f79e7d8f0/go.mod h1:zUVOQL+81aMK+Ye3kS7eDsk/aWnteWRSJ5fZWHdBWjc=
 github.com/pmezard/go-difflib v1.0.0 h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZbAQM=
 github.com/pmezard/go-difflib v1.0.0/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4=
 github.com/stretchr/objx v0.1.0/go.mod h1:HFkY916IF+rwdDfMAkV7OtwuqBVzrE8GR6GFx+wExME=
