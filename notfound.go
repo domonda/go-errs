@@ -29,9 +29,19 @@ const ErrNotFound Sentinel = "not found"
 // IsErrNotFound returns true if the passed error
 // unwraps to, or is ErrNotFound, sql.ErrNoRows, or os.ErrNotExist.
 func IsErrNotFound(err error) bool {
-	return errors.Is(err, ErrNotFound) ||
-		errors.Is(err, sql.ErrNoRows) ||
-		errors.Is(err, os.ErrNotExist)
+	return err != nil &&
+		(errors.Is(err, ErrNotFound) ||
+			errors.Is(err, sql.ErrNoRows) ||
+			errors.Is(err, os.ErrNotExist))
+}
+
+// IsOtherThanErrNotFound returns true if the passed error is not nil
+// and does not unwrap to, or is ErrNotFound, sql.ErrNoRows, or os.ErrNotExist.
+func IsOtherThanErrNotFound(err error) bool {
+	return err != nil &&
+		!errors.Is(err, ErrNotFound) &&
+		!errors.Is(err, sql.ErrNoRows) &&
+		!errors.Is(err, os.ErrNotExist)
 }
 
 // ReplaceErrNotFound returns the passed replacement error
