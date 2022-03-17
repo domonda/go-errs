@@ -12,7 +12,7 @@ func (s stringer) String() string { return string(s) }
 func TestAsError(t *testing.T) {
 	tests := []struct {
 		name    string
-		input   interface{}
+		input   any
 		wantErr error
 	}{
 		{name: "nil", input: nil, wantErr: nil},
@@ -33,7 +33,7 @@ func TestAsError(t *testing.T) {
 }
 
 func TestRecoverPanicAsError(t *testing.T) {
-	f := func(p interface{}) (err error) {
+	f := func(p any) (err error) {
 		defer RecoverPanicAsError(&err)
 		if p != nil {
 			panic(p)
@@ -43,7 +43,7 @@ func TestRecoverPanicAsError(t *testing.T) {
 
 	tests := []struct {
 		name    string
-		panic   interface{}
+		panic   any
 		wantErr error
 	}{
 		{name: "nil", panic: nil, wantErr: nil},

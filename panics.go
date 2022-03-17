@@ -9,8 +9,8 @@ import (
 )
 
 // AsError converts any type to an error without wrapping it.
-func AsError(any interface{}) error {
-	switch x := any.(type) {
+func AsError(val any) error {
+	switch x := val.(type) {
 	case nil:
 		return nil
 	case error:
@@ -22,7 +22,7 @@ func AsError(any interface{}) error {
 	case fmt.Stringer:
 		return errors.New(x.String())
 	default:
-		return errors.New(pretty.Sprint(any))
+		return errors.New(pretty.Sprint(val))
 	}
 }
 
@@ -32,7 +32,7 @@ func AsError(any interface{}) error {
 // and prints it with the prefix "LogPanicWithFuncParams: "
 // to the passed Logger.
 // After logging, the original panic is re-paniced.
-func LogPanicWithFuncParams(log Logger, params ...interface{}) {
+func LogPanicWithFuncParams(log Logger, params ...any) {
 	p := recover()
 	if p == nil {
 		return
@@ -51,7 +51,7 @@ func LogPanicWithFuncParams(log Logger, params ...interface{}) {
 // of the panic and the passed function parameter values
 // and prints it with the prefix "RecoverAndLogPanicWithFuncParams: "
 // to the passed Logger.
-func RecoverAndLogPanicWithFuncParams(log Logger, params ...interface{}) {
+func RecoverAndLogPanicWithFuncParams(log Logger, params ...any) {
 	p := recover()
 	if p == nil {
 		return
@@ -84,7 +84,7 @@ func RecoverPanicAsError(result *error) {
 // converts it to an error wrapped with the callstack
 // of the panic and the passed function parameter values
 // and assigns it to the result error.
-func RecoverPanicAsErrorWithFuncParams(result *error, params ...interface{}) {
+func RecoverPanicAsErrorWithFuncParams(result *error, params ...any) {
 	p := recover()
 	if p == nil {
 		return

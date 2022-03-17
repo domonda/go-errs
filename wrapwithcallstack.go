@@ -18,7 +18,7 @@ func New(text string) error {
 // invalid to include more than one %w verb or to supply it with an operand
 // that does not implement the error interface. The %w verb is otherwise
 // a synonym for %v.
-func Errorf(format string, a ...interface{}) error {
+func Errorf(format string, a ...any) error {
 	return WrapWithCallStackSkip(1, fmt.Errorf(format, a...))
 }
 

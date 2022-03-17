@@ -65,7 +65,7 @@ func (m multiError) Is(target error) bool {
 	return false
 }
 
-func (m multiError) As(target interface{}) bool {
+func (m multiError) As(target any) bool {
 	for _, err := range m {
 		if errors.As(err, target) {
 			return true

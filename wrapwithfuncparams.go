@@ -9,7 +9,7 @@ Could only be parsed from runtime.Stack() result text.
 See https://www.ardanlabs.com/blog/2015/01/stack-traces-in-go.html
 */
 
-func wrapWithFuncParamsSkip(skip int, err error, params ...interface{}) *withCallStackFuncParams {
+func wrapWithFuncParamsSkip(skip int, err error, params ...any) *withCallStackFuncParams {
 	switch w := err.(type) {
 	case callStackParamsProvider:
 		// OK, wrap the wrapped
@@ -34,13 +34,13 @@ func wrapWithFuncParamsSkip(skip int, err error, params ...interface{}) *withCal
 	}
 }
 
-func WrapWithFuncParamsSkip(skip int, resultVar *error, params ...interface{}) {
+func WrapWithFuncParamsSkip(skip int, resultVar *error, params ...any) {
 	if *resultVar != nil {
 		*resultVar = wrapWithFuncParamsSkip(1+skip, *resultVar, params...)
 	}
 }
 
-func WrapWithFuncParams(resultVar *error, params ...interface{}) {
+func WrapWithFuncParams(resultVar *error, params ...any) {
 	if *resultVar != nil {
 		*resultVar = wrapWithFuncParamsSkip(1, *resultVar, params...)
 	}
@@ -52,61 +52,61 @@ func WrapWith0FuncParams(resultVar *error) {
 	}
 }
 
-func WrapWith1FuncParam(resultVar *error, p0 interface{}) {
+func WrapWith1FuncParam(resultVar *error, p0 any) {
 	if *resultVar != nil {
 		*resultVar = wrapWithFuncParamsSkip(1, *resultVar, p0)
 	}
 }
 
-func WrapWith2FuncParams(resultVar *error, p0, p1 interface{}) {
+func WrapWith2FuncParams(resultVar *error, p0, p1 any) {
 	if *resultVar != nil {
 		*resultVar = wrapWithFuncParamsSkip(1, *resultVar, p0, p1)
 	}
 }
 
-func WrapWith3FuncParams(resultVar *error, p0, p1, p2 interface{}) {
+func WrapWith3FuncParams(resultVar *error, p0, p1, p2 any) {
 	if *resultVar != nil {
 		*resultVar = wrapWithFuncParamsSkip(1, *resultVar, p0, p1, p2)
 	}
 }
 
-func WrapWith4FuncParams(resultVar *error, p0, p1, p2, p3 interface{}) {
+func WrapWith4FuncParams(resultVar *error, p0, p1, p2, p3 any) {
 	if *resultVar != nil {
 		*resultVar = wrapWithFuncParamsSkip(1, *resultVar, p0, p1, p2, p3)
 	}
 }
 
-func WrapWith5FuncParams(resultVar *error, p0, p1, p2, p3, p4 interface{}) {
+func WrapWith5FuncParams(resultVar *error, p0, p1, p2, p3, p4 any) {
 	if *resultVar != nil {
 		*resultVar = wrapWithFuncParamsSkip(1, *resultVar, p0, p1, p2, p3, p4)
 	}
 }
 
-func WrapWith6FuncParams(resultVar *error, p0, p1, p2, p3, p4, p5 interface{}) {
+func WrapWith6FuncParams(resultVar *error, p0, p1, p2, p3, p4, p5 any) {
 	if *resultVar != nil {
 		*resultVar = wrapWithFuncParamsSkip(1, *resultVar, p0, p1, p2, p3, p4, p5)
 	}
 }
 
-func WrapWith7FuncParams(resultVar *error, p0, p1, p2, p3, p4, p5, p6 interface{}) {
+func WrapWith7FuncParams(resultVar *error, p0, p1, p2, p3, p4, p5, p6 any) {
 	if *resultVar != nil {
 		*resultVar = wrapWithFuncParamsSkip(1, *resultVar, p0, p1, p2, p3, p4, p5, p6)
 	}
 }
 
-func WrapWith8FuncParams(resultVar *error, p0, p1, p2, p3, p4, p5, p6, p7 interface{}) {
+func WrapWith8FuncParams(resultVar *error, p0, p1, p2, p3, p4, p5, p6, p7 any) {
 	if *resultVar != nil {
 		*resultVar = wrapWithFuncParamsSkip(1, *resultVar, p0, p1, p2, p3, p4, p5, p6, p7)
 	}
 }
 
-func WrapWith9FuncParams(resultVar *error, p0, p1, p2, p3, p4, p5, p6, p7, p8 interface{}) {
+func WrapWith9FuncParams(resultVar *error, p0, p1, p2, p3, p4, p5, p6, p7, p8 any) {
 	if *resultVar != nil {
 		*resultVar = wrapWithFuncParamsSkip(1, *resultVar, p0, p1, p2, p3, p4, p5, p6, p7, p8)
 	}
 }
 
-func WrapWith10FuncParams(resultVar *error, p0, p1, p2, p3, p4, p5, p6, p7, p8, p9 interface{}) {
+func WrapWith10FuncParams(resultVar *error, p0, p1, p2, p3, p4, p5, p6, p7, p8, p9 any) {
 	if *resultVar != nil {
 		*resultVar = wrapWithFuncParamsSkip(1, *resultVar, p0, p1, p2, p3, p4, p5, p6, p7, p8, p9)
 	}
@@ -115,19 +115,19 @@ func WrapWith10FuncParams(resultVar *error, p0, p1, p2, p3, p4, p5, p6, p7, p8, 
 type callStackParamsProvider interface {
 	callStackProvider
 
-	CallStackParams() ([]uintptr, []interface{})
+	CallStackParams() ([]uintptr, []any)
 }
 
 type withCallStackFuncParams struct {
 	withCallStack
 
-	params []interface{}
+	params []any
 }
 
 func (w *withCallStackFuncParams) Error() string {
 	return formatError(w)
 }
 
-func (w *withCallStackFuncParams) CallStackParams() ([]uintptr, []interface{}) {
+func (w *withCallStackFuncParams) CallStackParams() ([]uintptr, []any) {
 	return w.callStack, w.params
 }
