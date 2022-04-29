@@ -9,6 +9,7 @@ import (
 )
 
 // AsError converts any type to an error without wrapping it.
+// Nil values will be converted to a nil error.
 func AsError(val any) error {
 	switch x := val.(type) {
 	case nil:
@@ -26,6 +27,17 @@ func AsError(val any) error {
 	}
 }
 
+// AsErrorWithDebugStack converts any type to an error
+// and if not nil wraps it with debug.Stack() after a newline.
+// Nil values will be converted to a nil error.
+func AsErrorWithDebugStack(val any) error {
+	err := AsError(val)
+	if err == nil {
+		return nil
+	}
+	return fmt.Errorf("%w\n%s", err, debug.Stack())
+}
+
 // LogPanicWithFuncParams recovers any panic,
 // converts it to an error wrapped with the callstack
 // of the panic and the passed function parameter values
@@ -38,7 +50,7 @@ func LogPanicWithFuncParams(log Logger, params ...any) {
 		return
 	}
 
-	err := fmt.Errorf("%w\n%s", AsError(p), debug.Stack())
+	err := AsErrorWithDebugStack(p)
 	err = wrapWithFuncParamsSkip(1, err, params...)
 
 	log.Printf("LogPanicWithFuncParams: %s", err.Error())
@@ -57,7 +69,7 @@ func RecoverAndLogPanicWithFuncParams(log Logger, params ...any) {
 		return
 	}
 
-	err := fmt.Errorf("%w\n%s", AsError(p), debug.Stack())
+	err := AsErrorWithDebugStack(p)
 	err = wrapWithFuncParamsSkip(1, err, params...)
 
 	log.Printf("RecoverAndLogPanicWithFuncParams: %s", err.Error())
@@ -72,7 +84,7 @@ func RecoverPanicAsError(result *error) {
 		return
 	}
 
-	err := fmt.Errorf("%w\n%s", AsError(p), debug.Stack())
+	err := AsErrorWithDebugStack(p)
 	if *result != nil {
 		err = fmt.Errorf("function returning error (%s) paniced with: %w", *result, err)
 	}
@@ -90,7 +102,7 @@ func RecoverPanicAsErrorWithFuncParams(result *error, params ...any) {
 		return
 	}
 
-	err := fmt.Errorf("%w\n%s", AsError(p), debug.Stack())
+	err := AsErrorWithDebugStack(p)
 	err = wrapWithFuncParamsSkip(1, err, params...)
 	if *result != nil {
 		err = fmt.Errorf("function returning error (%s) paniced with: %w", *result, err)
