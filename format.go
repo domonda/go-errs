@@ -91,3 +91,8 @@ func FormatFunctionCall(function string, params ...any) string {
 	b.WriteByte(')')
 	return b.String()
 }
+
+// LogFunctionCall using FormatFunctionCall
+func LogFunctionCall(logger Logger, function string, params ...any) {
+	logger.Printf(FormatFunctionCall(function, args...))
+}
