@@ -92,7 +92,9 @@ func FormatFunctionCall(function string, params ...any) string {
 	return b.String()
 }
 
-// LogFunctionCall using FormatFunctionCall
+// LogFunctionCall using FormatFunctionCall if logger is not nil
 func LogFunctionCall(logger Logger, function string, params ...any) {
-	logger.Printf(FormatFunctionCall(function, params...))
+	if logger != nil {
+		logger.Printf(FormatFunctionCall(function, params...))
+	}
 }
