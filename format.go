@@ -94,5 +94,5 @@ func FormatFunctionCall(function string, params ...any) string {
 
 // LogFunctionCall using FormatFunctionCall
 func LogFunctionCall(logger Logger, function string, params ...any) {
-	logger.Printf(FormatFunctionCall(function, args...))
+	logger.Printf(FormatFunctionCall(function, params...))
 }
