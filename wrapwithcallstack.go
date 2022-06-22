@@ -41,6 +41,12 @@ type callStackProvider interface {
 	CallStack() []uintptr
 }
 
+var (
+	_ error             = &withCallStack{}
+	_ callStackProvider = &withCallStack{}
+)
+
+// withCallStack is an error wrapper that implements callStackProvider
 type withCallStack struct {
 	err       error
 	callStack []uintptr

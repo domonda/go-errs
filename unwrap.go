@@ -51,3 +51,18 @@ func IsType(err, ref error) bool {
 		}
 	}
 }
+
+// Type indicates if err is not nil and it
+// or any unwrapped error is of the type T.
+// It works similar than errors.As but
+// without assigning to the ref error
+// and without checking for Is or As methods.
+func Type[T error](err error) bool {
+	for err != nil {
+		if _, ok := err.(T); ok {
+			return true
+		}
+		err = errors.Unwrap(err)
+	}
+	return false
+}

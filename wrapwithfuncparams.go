@@ -118,6 +118,13 @@ type callStackParamsProvider interface {
 	CallStackParams() ([]uintptr, []any)
 }
 
+var (
+	_ error                   = &withCallStackFuncParams{}
+	_ callStackProvider       = &withCallStackFuncParams{}
+	_ callStackParamsProvider = &withCallStackFuncParams{}
+)
+
+// withCallStackFuncParams is an error wrapper that implements callStackParamsProvider
 type withCallStackFuncParams struct {
 	withCallStack
 
