@@ -5,7 +5,13 @@ import (
 	"strings"
 )
 
-func staticBuildTimeGOPATH() string {
+// TrimFilePathPrefix will be trimmed from the
+// beginning of every call-stack file-path.
+// Defaults to $GOPATH/src/ of the build environment
+// or will be empty if go build gets called with -trimpath.
+var TrimFilePathPrefix = filePathPrefix()
+
+func filePathPrefix() string {
 	// This Go package is hosted on GitHub
 	// so there should always be "github.com"
 	// in the path of this source file
@@ -15,19 +21,5 @@ func staticBuildTimeGOPATH() string {
 	if end == -1 {
 		panic("expected github.com in call-stack file-path, but got: " + file)
 	}
-	goPath := file[:end]
-	switch {
-	case strings.HasSuffix(goPath, "/pkg/mod/"):
-		goPath = strings.TrimSuffix(goPath, "pkg/mod/")
-	case strings.HasSuffix(goPath, "/src/"):
-		goPath = strings.TrimSuffix(goPath, "src/")
-	default:
-		panic("expected /pkg/mod/ or /src/ in call-stack file-path, but got: " + file)
-	}
-	return goPath
+	return file[:end]
 }
-
-// TrimFilePathPrefix will be trimmed from the
-// beginning of every call-stack file-path.
-// Defaults to $GOPATH of the build environment.
-var TrimFilePathPrefix = staticBuildTimeGOPATH()

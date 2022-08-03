@@ -12,7 +12,7 @@ func TestTrimFilePathPrefix(t *testing.T) {
 		t.Fatal("GOPATH env var not set")
 	}
 	// $GOPATH/src/
-	expected := filepath.Clean(goPath) + string(filepath.Separator)
+	expected := filepath.Clean(goPath) + string(filepath.Separator) + "src" + string(filepath.Separator)
 	if TrimFilePathPrefix != expected {
 		t.Fatalf("TrimFilePathPrefix %q is not the expected path %q", TrimFilePathPrefix, expected)
 	}
