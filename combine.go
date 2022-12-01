@@ -20,13 +20,14 @@ import "errors"
 func Combine(errs ...error) error {
 	var combined multiError
 	for _, err := range errs {
-		if err != nil {
-			var m multiError
-			if errors.As(err, &m) {
-				combined = append(combined, m.Errors()...)
-			} else {
-				combined = append(combined, err)
-			}
+		if err == nil {
+			continue
+		}
+		var m multiError
+		if errors.As(err, &m) {
+			combined = append(combined, m.Errors()...)
+		} else {
+			combined = append(combined, err)
 		}
 	}
 
@@ -35,9 +36,8 @@ func Combine(errs ...error) error {
 		return nil
 	case 1:
 		return combined[0]
-	default:
-		return combined
 	}
+	return combined
 }
 
 // Uncombine returns multiple errors if err is a MultiError,
