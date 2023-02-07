@@ -43,6 +43,32 @@ func TestRoot(t *testing.T) {
 	}
 }
 
+func TestHas(t *testing.T) {
+	sentinel := Sentinel("sentinel")
+
+	tests := []struct {
+		name string
+		got  bool
+		want bool
+	}{
+		{name: "nil", got: Has[Sentinel](nil), want: false},
+		{name: "nil, error", got: Has[error](nil), want: false},
+		{name: "sentinel, Sentinel", got: Has[Sentinel](sentinel), want: true},
+		{name: "other, Sentinel", got: Has[Sentinel](errors.New("other")), want: false},
+		{name: "struct, Sentinel", got: Has[Sentinel](errStruct{"other"}), want: false},
+		{name: "struct, struct", got: Has[errStruct](errStruct{"a"}), want: true},
+		{name: "wrapped(struct), struct", got: Has[errStruct](fmt.Errorf("wrapped: %w", errStruct{"a"})), want: true},
+		{name: "2x wrapped(struct), struct", got: Has[errStruct](Errorf("wrapped: %w", errWrapper{Wrapped: errStruct{"a"}})), want: true},
+		{name: "errWrapper(struct), errWrapper", got: Has[errWrapper](Errorf("wrapped: %w", errWrapper{Wrapped: errStruct{"a"}})), want: true},
+		{name: "Errorf, withCallStack", got: Has[*withCallStack](Errorf("wrapped: %w", errWrapper{Wrapped: errStruct{"a"}})), want: true},
+	}
+	for _, tt := range tests {
+		if tt.got != tt.want {
+			t.Errorf("Test %q: Type() = %v, want %v", tt.name, tt.got, tt.want)
+		}
+	}
+}
+
 func TestIsType(t *testing.T) {
 	sentinel := Sentinel("sentinel")
 	_ = sentinel // if use is commented out for debugging
@@ -73,32 +99,6 @@ func TestIsType(t *testing.T) {
 				t.Errorf("IsType() = %v, want %v", got, tt.want)
 			}
 		})
-	}
-}
-
-func TestType(t *testing.T) {
-	sentinel := Sentinel("sentinel")
-
-	tests := []struct {
-		name string
-		got  bool
-		want bool
-	}{
-		{name: "nil", got: Type[Sentinel](nil), want: false},
-		{name: "nil, error", got: Type[error](nil), want: false},
-		{name: "sentinel, Sentinel", got: Type[Sentinel](sentinel), want: true},
-		{name: "other, Sentinel", got: Type[Sentinel](errors.New("other")), want: false},
-		{name: "struct, Sentinel", got: Type[Sentinel](errStruct{"other"}), want: false},
-		{name: "struct, struct", got: Type[errStruct](errStruct{"a"}), want: true},
-		{name: "wrapped(struct), struct", got: Type[errStruct](fmt.Errorf("wrapped: %w", errStruct{"a"})), want: true},
-		{name: "2x wrapped(struct), struct", got: Type[errStruct](Errorf("wrapped: %w", errWrapper{Wrapped: errStruct{"a"}})), want: true},
-		{name: "errWrapper(struct), errWrapper", got: Type[errWrapper](Errorf("wrapped: %w", errWrapper{Wrapped: errStruct{"a"}})), want: true},
-		{name: "Errorf, withCallStack", got: Type[*withCallStack](Errorf("wrapped: %w", errWrapper{Wrapped: errStruct{"a"}})), want: true},
-	}
-	for _, tt := range tests {
-		if tt.got != tt.want {
-			t.Errorf("Test %q: Type() = %v, want %v", tt.name, tt.got, tt.want)
-		}
 	}
 }
 
