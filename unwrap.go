@@ -35,11 +35,10 @@ func As[T error](err error) []T {
 		return nil
 	}
 	var errs []T
-	var target T
-	targetType := reflect.TypeOf(target)
+	targetType := reflect.TypeOf((*T)(nil)).Elem()
 	for {
+		var target T
 		if reflect.TypeOf(err).AssignableTo(targetType) {
-			var target T
 			reflect.ValueOf(&target).Elem().Set(reflect.ValueOf(err))
 			errs = append(errs, target)
 		}
