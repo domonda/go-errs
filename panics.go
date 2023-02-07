@@ -17,7 +17,7 @@ func AsError(val any) error {
 	case error:
 		return x
 	case []error:
-		return Combine(x...)
+		return errors.Join(x...)
 	case string:
 		return errors.New(x)
 	case fmt.Stringer:

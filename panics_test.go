@@ -17,7 +17,7 @@ func TestAsError(t *testing.T) {
 	}{
 		{name: "nil", input: nil, wantErr: nil},
 		{name: "error", input: errors.New("error"), wantErr: errors.New("error")},
-		{name: "errors", input: []error{errors.New("a"), errors.New("a")}, wantErr: Combine(errors.New("a"), errors.New("a"))},
+		{name: "errors", input: []error{errors.New("a"), errors.New("a")}, wantErr: errors.Join(errors.New("a"), errors.New("a"))},
 		{name: "string", input: "string", wantErr: errors.New("string")},
 		{name: "stringer", input: stringer("stringer"), wantErr: errors.New("stringer")},
 		{name: "int", input: 666, wantErr: errors.New("666")},
