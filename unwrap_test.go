@@ -4,6 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 type errStruct struct{ Err string }
@@ -98,4 +100,38 @@ func TestType(t *testing.T) {
 			t.Errorf("Test %q: Type() = %v, want %v", tt.name, tt.got, tt.want)
 		}
 	}
+}
+
+// func Test_UnwrapAll(t *testing.T) {
+// 	const (
+// 		e0 = Sentinel("e0")
+// 		e1 = Sentinel("e1")
+// 		e2 = Sentinel("e2")
+// 	)
+
+// 	err := errors.Join(e0, e1, e2)
+// 	assert.EqualError(t, err, "e0\ne1\ne2")
+
+// 	errs := UnwrapAll(err)
+// 	assert.Len(t, errs, 3)
+// 	assert.Equal(t, e0, errs[0])
+// 	assert.Equal(t, e1, errs[1])
+// 	assert.Equal(t, e2, errs[2])
+// }
+
+func Test_As(t *testing.T) {
+	const (
+		e0 = Sentinel("e0")
+		e1 = Sentinel("e1")
+		e2 = Sentinel("e2")
+	)
+
+	err := errors.Join(e0, e1, e2)
+	assert.EqualError(t, err, "e0\ne1\ne2")
+
+	errs := As[Sentinel](err)
+	assert.Len(t, errs, 3)
+	assert.Equal(t, e0, errs[0])
+	assert.Equal(t, e1, errs[1])
+	assert.Equal(t, e2, errs[2])
 }

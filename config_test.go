@@ -1,19 +1,17 @@
 package errs
 
 import (
-	"os"
+	"go/build"
 	"path/filepath"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestTrimFilePathPrefix(t *testing.T) {
-	goPath := os.Getenv("GOPATH")
-	if goPath == "" {
-		t.Fatal("GOPATH env var not set")
-	}
+	goPath := build.Default.GOPATH
+	require.NotEmpty(t, goPath, "GOPATH")
 	// $GOPATH/src/
 	expected := filepath.Clean(goPath) + string(filepath.Separator) + "src" + string(filepath.Separator)
-	if TrimFilePathPrefix != expected {
-		t.Fatalf("TrimFilePathPrefix %q is not the expected path %q", TrimFilePathPrefix, expected)
-	}
+	require.Equal(t, expected, TrimFilePathPrefix, "TrimFilePathPrefix")
 }

@@ -16,6 +16,79 @@ func Root(err error) error {
 	}
 }
 
+// As returns all errors of type T in the wrapping tree of err.
+//
+// This function is similar to errors.As
+// but traverses the full tree using the interface methods:
+//
+//	Unwrap() error
+//	Unwrap() []error
+func As[T error](err error) []T {
+	if err == nil {
+		return nil
+	}
+	var errs []T
+	var target T
+	targetType := reflect.TypeOf(target)
+	for {
+		if reflect.TypeOf(err).AssignableTo(targetType) {
+			var target T
+			reflect.ValueOf(&target).Elem().Set(reflect.ValueOf(err))
+			errs = append(errs, target)
+		}
+		if x, ok := err.(interface{ As(any) bool }); ok && x.As(&target) {
+			errs = append(errs, target)
+		}
+		switch x := err.(type) {
+		case interface{ Unwrap() error }:
+			err = x.Unwrap()
+			if err == nil {
+				return errs
+			}
+		case interface{ Unwrap() []error }:
+			for _, err := range x.Unwrap() {
+				errs = append(errs, As[T](err)...)
+			}
+			return errs
+		default:
+			return errs
+		}
+	}
+}
+
+// // UnwrapAll returns all wrapped errors
+// // not including the wrapper errors.
+// //
+// // It uses the interfaces
+// //
+// //	interface{ Unwrap() error }
+// //	interface{ Unwrap() []error }
+// func UnwrapAll(err error) []error {
+// 	if err == nil {
+// 		return nil
+// 	}
+// 	var errs []error
+// 	for {
+// 		switch x := err.(type) {
+// 		case interface{ Unwrap() error }:
+// 			err = x.Unwrap()
+// 			if err == nil {
+// 				return errs
+// 			}
+// 			errs = append(errs, err)
+
+// 		case interface{ Unwrap() []error }:
+// 			for _, e := range x.Unwrap() {
+// 				errs = append(errs, UnwrapAll(e)...)
+// 			}
+// 			return errs
+
+// 		default:
+// 			return append(errs, err)
+// 		}
+// 	}
+// }
+
 // UnwrapCallStack unwraps callstack information from err
 // and returns the first non callstack wrapper error.
 // It does not remove callstack wrapping further down the
