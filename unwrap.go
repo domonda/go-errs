@@ -16,6 +16,13 @@ func Root(err error) error {
 	}
 }
 
+// Has is a shortcut for errors.As
+// when the target error value is not needed.
+func Has[T error](err error) bool {
+	var target T
+	return errors.As(err, &target)
+}
+
 // As returns all errors of type T in the wrapping tree of err.
 //
 // This function is similar to errors.As
