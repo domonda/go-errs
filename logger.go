@@ -24,7 +24,7 @@ type LogDecisionMaker interface {
 // of its ShouldLog method.
 // If error does not unwrap to LogDecisionMaker
 // and is not nil then ShouldLog returns true.
-// If nil is passed as error, then ShouldLog returns false.
+// A nil error results in false.
 func ShouldLog(err error) bool {
 	if err == nil {
 		return false
@@ -38,7 +38,11 @@ func ShouldLog(err error) bool {
 
 // DontLog wraps the passed error as LogDecisionMaker
 // so that ShouldLog returns false.
+// A nil error won't be wrapped but returned as nil.
 func DontLog(err error) error {
+	if err == nil {
+		return nil
+	}
 	return dontLog{err}
 }
 
