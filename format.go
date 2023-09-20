@@ -49,10 +49,7 @@ func formatError(err error) string {
 
 func formatCallStack(e callStackProvider) string {
 	stack := e.CallStack()
-	frame, ok := runtime.CallersFrames(stack).Next()
-	if !ok {
-		return "insufficient call stack"
-	}
+	frame, _ := runtime.CallersFrames(stack).Next()
 	return fmt.Sprintf(
 		"%s\n    %s:%d",
 		frame.Function,
@@ -63,10 +60,7 @@ func formatCallStack(e callStackProvider) string {
 
 func formatCallStackParams(e callStackParamsProvider) string {
 	stack, params := e.CallStackParams()
-	frame, ok := runtime.CallersFrames(stack).Next()
-	if !ok {
-		return "insufficient call stack"
-	}
+	frame, _ := runtime.CallersFrames(stack).Next()
 	return fmt.Sprintf(
 		"%s\n    %s:%d",
 		FormatFunctionCall(frame.Function, params...),
