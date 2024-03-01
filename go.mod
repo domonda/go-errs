@@ -1,6 +1,6 @@
 module github.com/domonda/go-errs
 
-go 1.21
+go 1.22
 
 require (
 	github.com/domonda/go-pretty v0.0.0-20230810130018-8920f571470a
