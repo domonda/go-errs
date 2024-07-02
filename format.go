@@ -3,11 +3,18 @@ package errs
 import (
 	"errors"
 	"fmt"
+	"io"
 	"runtime"
 	"strings"
 
 	"github.com/domonda/go-pretty"
 )
+
+// CallStackPrintable can be implemented to customize the printing
+// of the implementation's data in an error call stack output.
+type CallStackPrintable interface {
+	PrintForCallStack(io.Writer)
+}
 
 func formatError(err error) string {
 	var (
@@ -70,9 +77,13 @@ func formatCallStackParams(e callStackParamsProvider) string {
 }
 
 // FormatFunctionCall formats a function call in pseudo syntax
-// using github.com/domonda/go-pretty to format the params.
-// Used to format errors with function call stack information.
-func FormatFunctionCall(function string, params ...any) string {
+// using the PrintForCallStack method of params that implement
+// the CallStackPrintable interface or github.com/domonda/go-pretty
+// to format params that don't implement CallStackPrintable.
+//
+// FormatFunctionCall is a function variable that can be changed
+// to globally configure the formatting of function calls.
+var FormatFunctionCall = func(function string, params ...any) string {
 	var b strings.Builder
 	b.WriteString(function)
 	b.WriteByte('(')
@@ -80,7 +91,11 @@ func FormatFunctionCall(function string, params ...any) string {
 		if i > 0 {
 			b.WriteString(", ")
 		}
-		pretty.Fprint(&b, param)
+		if printable, ok := param.(CallStackPrintable); ok {
+			printable.PrintForCallStack(&b)
+		} else {
+			pretty.Fprint(&b, param)
+		}
 	}
 	b.WriteByte(')')
 	return b.String()
