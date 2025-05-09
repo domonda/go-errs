@@ -1,10 +1,10 @@
 module github.com/domonda/go-errs
 
-go 1.22
+go 1.23
 
 require (
 	github.com/domonda/go-pretty v0.0.0-20240110134850-17385799142f
-	github.com/stretchr/testify v1.9.0
+	github.com/stretchr/testify v1.10.0
 )
 
 require (
