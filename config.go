@@ -19,7 +19,8 @@ func filePathPrefix() string {
 	_, file, _, _ := runtime.Caller(1)
 	end := strings.Index(file, "github.com")
 	if end == -1 {
-		panic("expected github.com in call-stack file-path, but got: " + file)
+		// panic("expected github.com in call-stack file-path, but got: " + file)
+		return "" // GitHub action might have it under /home/runner/work/...
 	}
 	return file[:end]
 }
