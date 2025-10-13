@@ -141,7 +141,19 @@ func Type[T error](err error) bool {
 		if _, ok := err.(T); ok {
 			return true
 		}
-		err = errors.Unwrap(err)
+		switch x := err.(type) {
+		case interface{ Unwrap() error }:
+			err = x.Unwrap()
+		case interface{ Unwrap() []error }:
+			for _, e := range x.Unwrap() {
+				if Type[T](e) {
+					return true
+				}
+			}
+			return false
+		default:
+			return false
+		}
 	}
 	return false
 }

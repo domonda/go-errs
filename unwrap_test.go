@@ -135,3 +135,192 @@ func Test_As(t *testing.T) {
 	assert.Equal(t, e1, errs[1])
 	assert.Equal(t, e2, errs[2])
 }
+
+func TestAs_WithErrorsJoin(t *testing.T) {
+	t.Run("simple join", func(t *testing.T) {
+		const (
+			e0 = Sentinel("e0")
+			e1 = Sentinel("e1")
+			e2 = Sentinel("e2")
+		)
+
+		err := errors.Join(e0, e1, e2)
+		errs := As[Sentinel](err)
+		assert.Len(t, errs, 3)
+		assert.Equal(t, e0, errs[0])
+		assert.Equal(t, e1, errs[1])
+		assert.Equal(t, e2, errs[2])
+	})
+
+	t.Run("mixed types in join", func(t *testing.T) {
+		sentinel := Sentinel("sentinel")
+		structErr := errStruct{Err: "struct"}
+		wrappedErr := errWrapper{Wrapped: errors.New("wrapped")}
+
+		err := errors.Join(sentinel, structErr, wrappedErr)
+
+		sentinels := As[Sentinel](err)
+		assert.Len(t, sentinels, 1)
+		assert.Equal(t, sentinel, sentinels[0])
+
+		structs := As[errStruct](err)
+		assert.Len(t, structs, 1)
+		assert.Equal(t, structErr, structs[0])
+
+		wrappers := As[errWrapper](err)
+		assert.Len(t, wrappers, 1)
+		assert.Equal(t, wrappedErr, wrappers[0])
+	})
+
+	t.Run("nested join", func(t *testing.T) {
+		e0 := Sentinel("e0")
+		e1 := Sentinel("e1")
+		e2 := Sentinel("e2")
+		e3 := Sentinel("e3")
+
+		inner := errors.Join(e1, e2)
+		outer := errors.Join(e0, inner, e3)
+
+		errs := As[Sentinel](outer)
+		assert.Len(t, errs, 4)
+		assert.Equal(t, e0, errs[0])
+		assert.Equal(t, e1, errs[1])
+		assert.Equal(t, e2, errs[2])
+		assert.Equal(t, e3, errs[3])
+	})
+
+	t.Run("join with wrapped errors", func(t *testing.T) {
+		e0 := Sentinel("e0")
+		e1 := Sentinel("e1")
+		wrapped := fmt.Errorf("wrapped: %w", e1)
+
+		err := errors.Join(e0, wrapped)
+
+		errs := As[Sentinel](err)
+		assert.Len(t, errs, 2)
+		assert.Equal(t, e0, errs[0])
+		assert.Equal(t, e1, errs[1])
+	})
+
+	t.Run("join with callstack wrapped errors", func(t *testing.T) {
+		e0 := Sentinel("e0")
+		e1 := Sentinel("e1")
+		withStack := WrapWithCallStack(e1)
+
+		err := errors.Join(e0, withStack)
+
+		errs := As[Sentinel](err)
+		assert.Len(t, errs, 2)
+		assert.Equal(t, e0, errs[0])
+		assert.Equal(t, e1, errs[1])
+
+		stacks := As[*withCallStack](err)
+		assert.Len(t, stacks, 1)
+	})
+}
+
+func TestUnwrapCallStack_WithErrorsJoin(t *testing.T) {
+	t.Run("join with callstack wrapper", func(t *testing.T) {
+		sentinel := Sentinel("sentinel")
+		wrapped := WrapWithCallStack(sentinel)
+
+		err := errors.Join(wrapped, errors.New("other"))
+
+		// UnwrapCallStack should not affect errors.Join wrapper
+		result := UnwrapCallStack(err)
+		assert.Equal(t, err, result, "UnwrapCallStack should not unwrap errors.Join")
+	})
+
+	t.Run("callstack wrapped join", func(t *testing.T) {
+		e0 := Sentinel("e0")
+		e1 := Sentinel("e1")
+		joined := errors.Join(e0, e1)
+		wrapped := WrapWithCallStack(joined)
+
+		result := UnwrapCallStack(wrapped)
+		assert.Equal(t, joined, result)
+	})
+
+	t.Run("multiple callstack wrappers with join", func(t *testing.T) {
+		sentinel := Sentinel("sentinel")
+		wrapped1 := WrapWithCallStack(sentinel)
+		wrapped2 := WrapWithCallStack(wrapped1)
+
+		result := UnwrapCallStack(wrapped2)
+		assert.Equal(t, sentinel, result)
+	})
+}
+
+func TestHas_WithErrorsJoin(t *testing.T) {
+	t.Run("find sentinel in join", func(t *testing.T) {
+		sentinel := Sentinel("sentinel")
+		other := errors.New("other")
+
+		err := errors.Join(sentinel, other)
+
+		assert.True(t, Has[Sentinel](err))
+	})
+
+	t.Run("find struct in join", func(t *testing.T) {
+		structErr := errStruct{Err: "struct"}
+		other := errors.New("other")
+
+		err := errors.Join(structErr, other)
+
+		assert.True(t, Has[errStruct](err))
+		assert.False(t, Has[errWrapper](err))
+	})
+
+	t.Run("find in nested join", func(t *testing.T) {
+		structErr := errStruct{Err: "struct"}
+		inner := errors.Join(structErr, errors.New("inner"))
+		outer := errors.Join(errors.New("outer"), inner)
+
+		assert.True(t, Has[errStruct](outer))
+	})
+}
+
+func TestType_WithErrorsJoin(t *testing.T) {
+	t.Run("find type in join", func(t *testing.T) {
+		sentinel := Sentinel("sentinel")
+		other := errors.New("other")
+
+		err := errors.Join(sentinel, other)
+
+		assert.True(t, Type[Sentinel](err))
+	})
+
+	t.Run("find struct type in join", func(t *testing.T) {
+		structErr := errStruct{Err: "struct"}
+		other := errors.New("other")
+
+		err := errors.Join(structErr, other)
+
+		assert.True(t, Type[errStruct](err))
+		assert.False(t, Type[errWrapper](err))
+	})
+}
+
+func TestRoot_WithErrorsJoin(t *testing.T) {
+	t.Run("root of errors.Join", func(t *testing.T) {
+		e0 := Sentinel("e0")
+		e1 := Sentinel("e1")
+
+		err := errors.Join(e0, e1)
+
+		// Root doesn't unwrap errors.Join since it doesn't implement single Unwrap()
+		result := Root(err)
+		assert.Equal(t, err, result)
+	})
+
+	t.Run("root through wrapped join", func(t *testing.T) {
+		e0 := Sentinel("e0")
+		e1 := Sentinel("e1")
+
+		joined := errors.Join(e0, e1)
+		wrapped := fmt.Errorf("wrapper: %w", joined)
+
+		result := Root(wrapped)
+		assert.Equal(t, joined, result)
+	})
+}

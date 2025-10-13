@@ -12,10 +12,29 @@ import (
 
 // CallStackPrintable can be implemented to customize the printing
 // of the implementation's data in an error call stack output.
+//
+// When an error is formatted with a call stack, any function parameters
+// that implement this interface will use PrintForCallStack instead of
+// the default pretty-printing.
+//
+// Example:
+//
+//	type SensitiveData struct {
+//	    value string
+//	}
+//
+//	func (s SensitiveData) PrintForCallStack(w io.Writer) {
+//	    w.Write([]byte("***REDACTED***"))
+//	}
 type CallStackPrintable interface {
 	PrintForCallStack(io.Writer)
 }
 
+// formatError formats an error with its call stack and function parameters.
+// It unwraps the error chain and builds a formatted string showing:
+//   - The root error message
+//   - Each function call with its parameters (if wrapped with WrapWithFuncParams)
+//   - The file and line number for each call
 func formatError(err error) string {
 	var (
 		firstWithoutStack error
@@ -101,7 +120,8 @@ var FormatFunctionCall = func(function string, params ...any) string {
 	return b.String()
 }
 
-// LogFunctionCall using FormatFunctionCall if logger is not nil
+// LogFunctionCall logs a formatted function call using FormatFunctionCall if logger is not nil.
+// This is useful for logging function calls with their parameters for debugging.
 func LogFunctionCall(logger Logger, function string, params ...any) {
 	if logger != nil {
 		logger.Printf(FormatFunctionCall(function, params...))

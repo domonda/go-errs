@@ -1,3 +1,21 @@
+// Package errs provides Go 1.13+ compatible error wrapping with call stacks and function parameters.
+//
+// This package extends the standard library's error handling with:
+//   - Automatic call stack capture for error context
+//   - Function parameter tracking for detailed debugging
+//   - Helper functions for common error patterns (NotFound, context errors)
+//   - Panic recovery and conversion to errors
+//   - Iterator support for Go 1.23+
+//
+// Basic usage:
+//
+//	func DoSomething(id string) (err error) {
+//	    defer errs.WrapWithFuncParams(&err, id)
+//	    // Your code here
+//	    return someOperation(id)
+//	}
+//
+// See the documentation of individual functions for more examples.
 package errs
 
 import (
@@ -29,6 +47,32 @@ func WrapWithCallStack(err error) error {
 
 // WrapWithCallStackSkip wraps an error with the current call stack
 // skipping skip stack frames.
+//
+// The skip parameter specifies how many stack frames to skip
+// before capturing the call stack. Use skip=0 to capture the stack
+// from the immediate caller of WrapWithCallStackSkip.
+// Increase skip by 1 for each additional function wrapper you add.
+//
+// Examples:
+//
+//	// Direct use - skip=1 to show caller of your function
+//	func DoSomething() error {
+//	    err := someOperation()
+//	    if err != nil {
+//	        return WrapWithCallStackSkip(1, err)
+//	    }
+//	    return nil
+//	}
+//
+//	// Wrapper function - skip=1+skip to pass through skip count
+//	func myWrapper(skip int, err error) error {
+//	    return WrapWithCallStackSkip(1+skip, err)
+//	}
+//
+//	// Helper that wraps - skip=1 so caller of helper appears in stack
+//	func wrapDatabaseError(err error) error {
+//	    return WrapWithCallStackSkip(1, fmt.Errorf("database error: %w", err))
+//	}
 func WrapWithCallStackSkip(skip int, err error) error {
 	return &withCallStack{
 		err:       err,
@@ -65,7 +109,7 @@ func (w *withCallStack) CallStack() []uintptr {
 }
 
 func callStack(skip int) []uintptr {
-	c := make([]uintptr, 32)
+	c := make([]uintptr, MaxCallStackFrames)
 	n := runtime.Callers(skip+2, c)
 	return c[:n]
 }
