@@ -3,7 +3,7 @@ module github.com/domonda/go-errs
 go 1.23
 
 require (
-	github.com/domonda/go-pretty v0.0.0-20240110134850-17385799142f
+	github.com/domonda/go-pretty v0.0.0-20251015070800-44d406a6d055
 	github.com/stretchr/testify v1.10.0
 )
 
