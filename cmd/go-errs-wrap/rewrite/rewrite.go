@@ -14,6 +14,8 @@ import (
 
 	"github.com/ungerik/go-astvisit"
 	goimports "golang.org/x/tools/imports"
+
+	"github.com/domonda/go-errs"
 )
 
 // Remove removes all defer errs.Wrap statements and //#wrap-result-err
@@ -21,7 +23,9 @@ import (
 //
 // If outPath is empty, files are modified in place.
 // If outPath is specified, results are written there instead.
-func Remove(sourcePath, outPath string, verboseOut io.Writer) error {
+func Remove(sourcePath, outPath string, verboseOut io.Writer) (err error) {
+	defer errs.WrapWithFuncParams(&err, sourcePath, outPath, verboseOut)
+
 	return process(sourcePath, outPath, verboseOut, true)
 }
 
@@ -31,12 +35,16 @@ func Remove(sourcePath, outPath string, verboseOut io.Writer) error {
 //
 // If outPath is empty, files are modified in place.
 // If outPath is specified, results are written there instead.
-func Replace(sourcePath, outPath string, verboseOut io.Writer) error {
+func Replace(sourcePath, outPath string, verboseOut io.Writer) (err error) {
+	defer errs.WrapWithFuncParams(&err, sourcePath, outPath, verboseOut)
+
 	return process(sourcePath, outPath, verboseOut, false)
 }
 
-func process(sourcePath, outPath string, verboseOut io.Writer, removeOnly bool) error {
-	sourcePath, err := filepath.Abs(sourcePath)
+func process(sourcePath, outPath string, verboseOut io.Writer, removeOnly bool) (err error) {
+	defer errs.WrapWithFuncParams(&err, sourcePath, outPath, verboseOut, removeOnly)
+
+	sourcePath, err = filepath.Abs(sourcePath)
 	if err != nil {
 		return err
 	}
@@ -67,13 +75,15 @@ func process(sourcePath, outPath string, verboseOut io.Writer, removeOnly bool) 
 		verboseOut,
 		nil, // modify in place
 		false,
-		func(fset *token.FileSet, pkg *ast.Package, astFile *ast.File, filePath string, verboseOut io.Writer) (astvisit.NodeReplacements, astvisit.Imports, error) {
-			return processFile(fset, pkg, astFile, filePath, verboseOut, removeOnly)
+		func(fset *token.FileSet, _ *ast.Package, astFile *ast.File, filePath string, verboseOut io.Writer) (astvisit.NodeReplacements, astvisit.Imports, error) {
+			return processFile(fset, astFile, verboseOut, removeOnly)
 		},
 	)
 }
 
-func processSingleFileWithOutput(sourcePath, outPath string, verboseOut io.Writer, removeOnly bool) error {
+func processSingleFileWithOutput(sourcePath, outPath string, verboseOut io.Writer, removeOnly bool) (err error) {
+	defer errs.WrapWithFuncParams(&err, sourcePath, outPath, verboseOut, removeOnly)
+
 	// Determine final output path
 	outInfo, err := os.Stat(outPath)
 	if err == nil && outInfo.IsDir() {
@@ -95,7 +105,7 @@ func processSingleFileWithOutput(sourcePath, outPath string, verboseOut io.Write
 		nil, // We handle output ourselves
 		false,
 		func(fset *token.FileSet, pkg *ast.Package, astFile *ast.File, filePath string, verboseOut io.Writer) (astvisit.NodeReplacements, astvisit.Imports, error) {
-			replacements, imports, err := processFile(fset, pkg, astFile, filePath, verboseOut, removeOnly)
+			replacements, imports, err := processFile(fset, astFile, verboseOut, removeOnly)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -147,9 +157,11 @@ func processSingleFileWithOutput(sourcePath, outPath string, verboseOut io.Write
 	)
 }
 
-func processDirectoryWithOutput(sourcePath, outPath string, verboseOut io.Writer, removeOnly bool) error {
+func processDirectoryWithOutput(sourcePath, outPath string, verboseOut io.Writer, removeOnly bool) (err error) {
+	defer errs.WrapWithFuncParams(&err, sourcePath, outPath, verboseOut, removeOnly)
+
 	// First, copy non-Go files
-	err := filepath.Walk(sourcePath, func(path string, info os.FileInfo, err error) error {
+	err = filepath.Walk(sourcePath, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
@@ -170,6 +182,9 @@ func processDirectoryWithOutput(sourcePath, outPath string, verboseOut io.Writer
 		}
 
 		// Copy non-Go files
+		if verboseOut != nil {
+			fmt.Fprintf(verboseOut, "copying: %s -> %s\n", path, destPath)
+		}
 		return copyFile(path, destPath)
 	})
 	if err != nil {
@@ -183,7 +198,7 @@ func processDirectoryWithOutput(sourcePath, outPath string, verboseOut io.Writer
 		nil, // We'll handle output ourselves
 		false,
 		func(fset *token.FileSet, pkg *ast.Package, astFile *ast.File, filePath string, verboseOut io.Writer) (astvisit.NodeReplacements, astvisit.Imports, error) {
-			replacements, imports, err := processFile(fset, pkg, astFile, filePath, verboseOut, removeOnly)
+			replacements, imports, err := processFile(fset, astFile, verboseOut, removeOnly)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -243,9 +258,10 @@ func processDirectoryWithOutput(sourcePath, outPath string, verboseOut io.Writer
 	)
 }
 
-func processFile(fset *token.FileSet, pkg *ast.Package, astFile *ast.File, filePath string, verboseOut io.Writer, removeOnly bool) (astvisit.NodeReplacements, astvisit.Imports, error) {
-	var replacements astvisit.NodeReplacements
-	imports := make(astvisit.Imports)
+func processFile(fset *token.FileSet, astFile *ast.File, verboseOut io.Writer, removeOnly bool) (replacements astvisit.NodeReplacements, imports astvisit.Imports, err error) {
+	defer errs.WrapWithFuncParams(&err, fset, astFile, verboseOut, removeOnly)
+
+	imports = make(astvisit.Imports)
 
 	// Visit all nodes to find defer statements
 	ast.Inspect(astFile, func(n ast.Node) bool {
@@ -259,24 +275,32 @@ func processFile(fset *token.FileSet, pkg *ast.Package, astFile *ast.File, fileP
 		}
 
 		if removeOnly {
+			if verboseOut != nil {
+				fmt.Fprintf(verboseOut, "%s: removing defer errs.Wrap\n", fset.Position(deferStmt.Pos()))
+			}
 			replacements.AddRemoval(deferStmt, "remove defer errs.Wrap")
 			return true
 		}
 
 		// Find enclosing function for replacement
-		ctx := findEnclosingFuncForPos(astFile, deferStmt.Pos())
-		if ctx == nil {
+		fun := findEnclosingFuncForPos(astFile, deferStmt.Pos())
+		if fun == nil {
 			fmt.Fprintf(os.Stderr, "warning: %s: defer statement not inside a function\n",
-				fset.Position(deferStmt.Pos()))
+				fset.Position(deferStmt.Pos()),
+			)
 			return true
 		}
-		if ctx.errorResultName == "" {
+		if fun.errorResultName == "" {
 			fmt.Fprintf(os.Stderr, "warning: %s: function %s has no named error result, skipping\n",
-				fset.Position(deferStmt.Pos()), ctx.funcName)
+				fset.Position(deferStmt.Pos()), fun.funcName,
+			)
 			return true
 		}
 
-		replacement := generateWrapStatement(ctx)
+		replacement := generateWrapStatement(fun)
+		if verboseOut != nil {
+			fmt.Fprintf(verboseOut, "%s: replacing defer errs.Wrap with %s\n", fset.Position(deferStmt.Pos()), replacement)
+		}
 		replacements.AddReplacement(deferStmt, replacement, "replace defer errs.Wrap")
 		imports[`"github.com/domonda/go-errs"`] = struct{}{}
 
@@ -295,6 +319,9 @@ func processFile(fset *token.FileSet, pkg *ast.Package, astFile *ast.File, fileP
 			}
 
 			if removeOnly {
+				if verboseOut != nil {
+					fmt.Fprintf(verboseOut, "%s: removing //#wrap-result-err\n", fset.Position(comment.Pos()))
+				}
 				replacements.AddRemoval(comment, "remove //#wrap-result-err")
 				continue
 			}
@@ -303,16 +330,21 @@ func processFile(fset *token.FileSet, pkg *ast.Package, astFile *ast.File, fileP
 			ctx := findEnclosingFuncForPos(astFile, comment.Pos())
 			if ctx == nil {
 				fmt.Fprintf(os.Stderr, "warning: %s: //#wrap-result-err not inside a function\n",
-					fset.Position(comment.Pos()))
+					fset.Position(comment.Pos()),
+				)
 				continue
 			}
 			if ctx.errorResultName == "" {
 				fmt.Fprintf(os.Stderr, "warning: %s: function %s has no named error result, skipping\n",
-					fset.Position(comment.Pos()), ctx.funcName)
+					fset.Position(comment.Pos()), ctx.funcName,
+				)
 				continue
 			}
 
 			replacement := generateWrapStatement(ctx)
+			if verboseOut != nil {
+				fmt.Fprintf(verboseOut, "%s: replacing //#wrap-result-err with %s\n", fset.Position(comment.Pos()), replacement)
+			}
 			replacements.AddReplacement(comment, replacement, "replace //#wrap-result-err")
 			imports[`"github.com/domonda/go-errs"`] = struct{}{}
 		}

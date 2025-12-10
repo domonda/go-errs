@@ -9,12 +9,12 @@ import (
 func TestGenerateWrapStatement(t *testing.T) {
 	tests := []struct {
 		name       string
-		ctx        *funcContext
+		fun        *funcInfo
 		wantResult string
 	}{
 		{
 			name: "0 parameters",
-			ctx: &funcContext{
+			fun: &funcInfo{
 				funcName:        "NoParams",
 				paramNames:      nil,
 				errorResultName: "err",
@@ -23,7 +23,7 @@ func TestGenerateWrapStatement(t *testing.T) {
 		},
 		{
 			name: "1 parameter",
-			ctx: &funcContext{
+			fun: &funcInfo{
 				funcName:        "OneParam",
 				paramNames:      []string{"ctx"},
 				errorResultName: "err",
@@ -32,7 +32,7 @@ func TestGenerateWrapStatement(t *testing.T) {
 		},
 		{
 			name: "2 parameters",
-			ctx: &funcContext{
+			fun: &funcInfo{
 				funcName:        "TwoParams",
 				paramNames:      []string{"ctx", "id"},
 				errorResultName: "err",
@@ -41,7 +41,7 @@ func TestGenerateWrapStatement(t *testing.T) {
 		},
 		{
 			name: "3 parameters",
-			ctx: &funcContext{
+			fun: &funcInfo{
 				funcName:        "ThreeParams",
 				paramNames:      []string{"ctx", "id", "name"},
 				errorResultName: "err",
@@ -50,7 +50,7 @@ func TestGenerateWrapStatement(t *testing.T) {
 		},
 		{
 			name: "4 parameters",
-			ctx: &funcContext{
+			fun: &funcInfo{
 				funcName:        "FourParams",
 				paramNames:      []string{"a", "b", "c", "d"},
 				errorResultName: "err",
@@ -59,7 +59,7 @@ func TestGenerateWrapStatement(t *testing.T) {
 		},
 		{
 			name: "5 parameters",
-			ctx: &funcContext{
+			fun: &funcInfo{
 				funcName:        "FiveParams",
 				paramNames:      []string{"a", "b", "c", "d", "e"},
 				errorResultName: "err",
@@ -68,7 +68,7 @@ func TestGenerateWrapStatement(t *testing.T) {
 		},
 		{
 			name: "6 parameters",
-			ctx: &funcContext{
+			fun: &funcInfo{
 				funcName:        "SixParams",
 				paramNames:      []string{"a", "b", "c", "d", "e", "f"},
 				errorResultName: "err",
@@ -77,7 +77,7 @@ func TestGenerateWrapStatement(t *testing.T) {
 		},
 		{
 			name: "7 parameters",
-			ctx: &funcContext{
+			fun: &funcInfo{
 				funcName:        "SevenParams",
 				paramNames:      []string{"a", "b", "c", "d", "e", "f", "g"},
 				errorResultName: "err",
@@ -86,7 +86,7 @@ func TestGenerateWrapStatement(t *testing.T) {
 		},
 		{
 			name: "8 parameters",
-			ctx: &funcContext{
+			fun: &funcInfo{
 				funcName:        "EightParams",
 				paramNames:      []string{"a", "b", "c", "d", "e", "f", "g", "h"},
 				errorResultName: "err",
@@ -95,7 +95,7 @@ func TestGenerateWrapStatement(t *testing.T) {
 		},
 		{
 			name: "9 parameters",
-			ctx: &funcContext{
+			fun: &funcInfo{
 				funcName:        "NineParams",
 				paramNames:      []string{"a", "b", "c", "d", "e", "f", "g", "h", "i"},
 				errorResultName: "err",
@@ -104,7 +104,7 @@ func TestGenerateWrapStatement(t *testing.T) {
 		},
 		{
 			name: "10 parameters",
-			ctx: &funcContext{
+			fun: &funcInfo{
 				funcName:        "TenParams",
 				paramNames:      []string{"a", "b", "c", "d", "e", "f", "g", "h", "i", "j"},
 				errorResultName: "err",
@@ -113,7 +113,7 @@ func TestGenerateWrapStatement(t *testing.T) {
 		},
 		{
 			name: "11 parameters (variadic fallback)",
-			ctx: &funcContext{
+			fun: &funcInfo{
 				funcName:        "ElevenParams",
 				paramNames:      []string{"a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k"},
 				errorResultName: "err",
@@ -122,7 +122,7 @@ func TestGenerateWrapStatement(t *testing.T) {
 		},
 		{
 			name: "12 parameters (variadic fallback)",
-			ctx: &funcContext{
+			fun: &funcInfo{
 				funcName:        "TwelveParams",
 				paramNames:      []string{"a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l"},
 				errorResultName: "err",
@@ -131,7 +131,7 @@ func TestGenerateWrapStatement(t *testing.T) {
 		},
 		{
 			name: "custom error result name",
-			ctx: &funcContext{
+			fun: &funcInfo{
 				funcName:        "CustomErr",
 				paramNames:      []string{"x", "y"},
 				errorResultName: "myError",
@@ -142,7 +142,7 @@ func TestGenerateWrapStatement(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := generateWrapStatement(tt.ctx)
+			result := generateWrapStatement(tt.fun)
 			assert.Equal(t, tt.wantResult, result)
 		})
 	}

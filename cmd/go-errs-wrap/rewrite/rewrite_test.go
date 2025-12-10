@@ -261,13 +261,7 @@ func Outer(a int) (err error) {
 	file, err := parser.ParseFile(fset, "test.go", code, parser.ParseComments)
 	require.NoError(t, err)
 
-	// Create a mock package
-	pkg := &ast.Package{
-		Name:  "test",
-		Files: map[string]*ast.File{"test.go": file},
-	}
-
-	replacements, imports, err := processFile(fset, pkg, file, "test.go", nil, false)
+	replacements, imports, err := processFile(fset, file, nil, false)
 	require.NoError(t, err)
 
 	// Should have one replacement for the anonymous function

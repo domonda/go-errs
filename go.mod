@@ -6,6 +6,7 @@ require (
 	github.com/domonda/go-pretty v0.0.0-20251015070800-44d406a6d055
 	github.com/stretchr/testify v1.11.1
 	github.com/ungerik/go-astvisit v0.0.0-20251017171216-b7bb0384dd33
+	golang.org/x/tools v0.38.0
 )
 
 require (
@@ -13,6 +14,5 @@ require (
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	golang.org/x/mod v0.29.0 // indirect
 	golang.org/x/sync v0.17.0 // indirect
-	golang.org/x/tools v0.38.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

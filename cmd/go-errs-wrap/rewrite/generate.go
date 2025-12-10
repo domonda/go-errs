@@ -10,45 +10,26 @@ import (
 //
 // It uses the optimized WrapWith0FuncParams through WrapWith10FuncParams for
 // 0-10 parameters, and falls back to the variadic WrapWithFuncParams for 11+.
-func generateWrapStatement(ctx *funcContext) string {
-	numParams := len(ctx.paramNames)
+func generateWrapStatement(fun *funcInfo) string {
+	numParams := len(fun.paramNames)
 
-	switch numParams {
-	case 0:
-		return fmt.Sprintf("defer errs.WrapWith0FuncParams(&%s)", ctx.errorResultName)
-	case 1:
+	switch {
+	case numParams == 0:
+		return fmt.Sprintf("defer errs.WrapWith0FuncParams(&%s)",
+			fun.errorResultName,
+		)
+	case numParams == 1:
 		return fmt.Sprintf("defer errs.WrapWith1FuncParam(&%s, %s)",
-			ctx.errorResultName, ctx.paramNames[0])
-	case 2:
-		return fmt.Sprintf("defer errs.WrapWith2FuncParams(&%s, %s)",
-			ctx.errorResultName, strings.Join(ctx.paramNames, ", "))
-	case 3:
-		return fmt.Sprintf("defer errs.WrapWith3FuncParams(&%s, %s)",
-			ctx.errorResultName, strings.Join(ctx.paramNames, ", "))
-	case 4:
-		return fmt.Sprintf("defer errs.WrapWith4FuncParams(&%s, %s)",
-			ctx.errorResultName, strings.Join(ctx.paramNames, ", "))
-	case 5:
-		return fmt.Sprintf("defer errs.WrapWith5FuncParams(&%s, %s)",
-			ctx.errorResultName, strings.Join(ctx.paramNames, ", "))
-	case 6:
-		return fmt.Sprintf("defer errs.WrapWith6FuncParams(&%s, %s)",
-			ctx.errorResultName, strings.Join(ctx.paramNames, ", "))
-	case 7:
-		return fmt.Sprintf("defer errs.WrapWith7FuncParams(&%s, %s)",
-			ctx.errorResultName, strings.Join(ctx.paramNames, ", "))
-	case 8:
-		return fmt.Sprintf("defer errs.WrapWith8FuncParams(&%s, %s)",
-			ctx.errorResultName, strings.Join(ctx.paramNames, ", "))
-	case 9:
-		return fmt.Sprintf("defer errs.WrapWith9FuncParams(&%s, %s)",
-			ctx.errorResultName, strings.Join(ctx.paramNames, ", "))
-	case 10:
-		return fmt.Sprintf("defer errs.WrapWith10FuncParams(&%s, %s)",
-			ctx.errorResultName, strings.Join(ctx.paramNames, ", "))
-	default:
+			fun.errorResultName, fun.paramNames[0],
+		)
+	case numParams > 10:
 		// 11+ parameters: use variadic version
 		return fmt.Sprintf("defer errs.WrapWithFuncParams(&%s, %s)",
-			ctx.errorResultName, strings.Join(ctx.paramNames, ", "))
+			fun.errorResultName, strings.Join(fun.paramNames, ", "),
+		)
+	default:
+		return fmt.Sprintf("defer errs.WrapWith%dFuncParams(&%s, %s)",
+			numParams, fun.errorResultName, strings.Join(fun.paramNames, ", "),
+		)
 	}
 }

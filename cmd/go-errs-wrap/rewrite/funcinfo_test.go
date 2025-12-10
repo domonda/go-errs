@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestExtractFuncContext(t *testing.T) {
+func TestExtractFuncInfo(t *testing.T) {
 	tests := []struct {
 		name            string
 		code            string
@@ -100,7 +100,7 @@ func Grouped(a, b, c string) (err error) { return }`,
 			}
 			require.NotNil(t, funcDecl, "no function declaration found")
 
-			ctx := extractFuncContext(funcDecl.Type, funcDecl.Name.Name, funcDecl.Pos(), funcDecl.End())
+			ctx := extractFuncInfo(funcDecl.Type, funcDecl.Name.Name, funcDecl.Pos(), funcDecl.End())
 
 			assert.Equal(t, tt.wantFuncName, ctx.funcName)
 			assert.Equal(t, tt.wantParams, ctx.paramNames)
