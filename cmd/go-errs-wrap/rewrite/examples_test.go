@@ -39,8 +39,8 @@ func TestExamplesReplace(t *testing.T) {
 			expected, err := os.ReadFile(expectedPath)
 			require.NoError(t, err, "expected file should exist: %s", expectedPath)
 
-			// Run replace
-			err = Replace(inputPath, outputPath, false, nil)
+			// Run replace with minVariadic=true to use specialized functions
+			err = Replace(inputPath, outputPath, false, true, nil)
 			require.NoError(t, err)
 
 			// Read actual output

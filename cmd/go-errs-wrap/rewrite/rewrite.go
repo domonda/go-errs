@@ -27,7 +27,7 @@ import (
 func Remove(sourcePath, outPath string, recursive bool, verboseOut io.Writer) (err error) {
 	defer errs.WrapWithFuncParams(&err, sourcePath, outPath, recursive, verboseOut)
 
-	return process(sourcePath, outPath, recursive, verboseOut, true)
+	return process(sourcePath, outPath, recursive, false, verboseOut, true)
 }
 
 // Replace replaces all defer errs.Wrap statements and //#wrap-result-err
@@ -37,14 +37,16 @@ func Remove(sourcePath, outPath string, recursive bool, verboseOut io.Writer) (e
 // If outPath is empty, files are modified in place.
 // If outPath is specified, results are written there instead.
 // If recursive is true, subdirectories are processed recursively.
-func Replace(sourcePath, outPath string, recursive bool, verboseOut io.Writer) (err error) {
-	defer errs.WrapWithFuncParams(&err, sourcePath, outPath, recursive, verboseOut)
+// If minVariadic is true, always use specialized WrapWithNFuncParams functions
+// instead of preserving existing variadic WrapWithFuncParams calls.
+func Replace(sourcePath, outPath string, recursive, minVariadic bool, verboseOut io.Writer) (err error) {
+	defer errs.WrapWithFuncParams(&err, sourcePath, outPath, recursive, minVariadic, verboseOut)
 
-	return process(sourcePath, outPath, recursive, verboseOut, false)
+	return process(sourcePath, outPath, recursive, minVariadic, verboseOut, false)
 }
 
-func process(sourcePath, outPath string, recursive bool, verboseOut io.Writer, removeOnly bool) (err error) {
-	defer errs.WrapWithFuncParams(&err, sourcePath, outPath, recursive, verboseOut, removeOnly)
+func process(sourcePath, outPath string, recursive, minVariadic bool, verboseOut io.Writer, removeOnly bool) (err error) {
+	defer errs.WrapWithFuncParams(&err, sourcePath, outPath, recursive, minVariadic, verboseOut, removeOnly)
 
 	sourcePath, err = filepath.Abs(sourcePath)
 	if err != nil {
@@ -63,12 +65,12 @@ func process(sourcePath, outPath string, recursive bool, verboseOut io.Writer, r
 			return err
 		}
 
-		if sourceInfo.IsDir() {
-			return processDirectoryWithOutput(sourcePath, outPath, verboseOut, removeOnly)
+			if sourceInfo.IsDir() {
+			return processDirectoryWithOutput(sourcePath, outPath, recursive, minVariadic, verboseOut, removeOnly)
 		}
 
 		// For single file with output, use custom handling
-		return processSingleFileWithOutput(sourcePath, outPath, verboseOut, removeOnly)
+		return processSingleFileWithOutput(sourcePath, outPath, minVariadic, verboseOut, removeOnly)
 	}
 
 	// In-place modification
@@ -83,13 +85,13 @@ func process(sourcePath, outPath string, recursive bool, verboseOut io.Writer, r
 		nil, // modify in place
 		false,
 		func(fset *token.FileSet, _ *ast.Package, astFile *ast.File, filePath string, verboseOut io.Writer) (astvisit.NodeReplacements, astvisit.Imports, error) {
-			return processFile(fset, astFile, verboseOut, removeOnly)
+			return processFile(fset, astFile, minVariadic, verboseOut, removeOnly)
 		},
 	)
 }
 
-func processSingleFileWithOutput(sourcePath, outPath string, verboseOut io.Writer, removeOnly bool) (err error) {
-	defer errs.WrapWithFuncParams(&err, sourcePath, outPath, verboseOut, removeOnly)
+func processSingleFileWithOutput(sourcePath, outPath string, minVariadic bool, verboseOut io.Writer, removeOnly bool) (err error) {
+	defer errs.WrapWithFuncParams(&err, sourcePath, outPath, minVariadic, verboseOut, removeOnly)
 
 	// Determine final output path
 	outInfo, err := os.Stat(outPath)
@@ -112,7 +114,7 @@ func processSingleFileWithOutput(sourcePath, outPath string, verboseOut io.Write
 		nil, // We handle output ourselves
 		false,
 		func(fset *token.FileSet, pkg *ast.Package, astFile *ast.File, filePath string, verboseOut io.Writer) (astvisit.NodeReplacements, astvisit.Imports, error) {
-			replacements, imports, err := processFile(fset, astFile, verboseOut, removeOnly)
+				replacements, imports, err := processFile(fset, astFile, minVariadic, verboseOut, removeOnly)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -164,8 +166,8 @@ func processSingleFileWithOutput(sourcePath, outPath string, verboseOut io.Write
 	)
 }
 
-func processDirectoryWithOutput(sourcePath, outPath string, verboseOut io.Writer, removeOnly bool) (err error) {
-	defer errs.WrapWithFuncParams(&err, sourcePath, outPath, verboseOut, removeOnly)
+func processDirectoryWithOutput(sourcePath, outPath string, recursive, minVariadic bool, verboseOut io.Writer, removeOnly bool) (err error) {
+	defer errs.WrapWithFuncParams(&err, sourcePath, outPath, recursive, minVariadic, verboseOut, removeOnly)
 
 	// First, copy non-Go files
 	err = filepath.Walk(sourcePath, func(path string, info os.FileInfo, err error) error {
@@ -205,7 +207,7 @@ func processDirectoryWithOutput(sourcePath, outPath string, verboseOut io.Writer
 		nil, // We'll handle output ourselves
 		false,
 		func(fset *token.FileSet, pkg *ast.Package, astFile *ast.File, filePath string, verboseOut io.Writer) (astvisit.NodeReplacements, astvisit.Imports, error) {
-			replacements, imports, err := processFile(fset, astFile, verboseOut, removeOnly)
+				replacements, imports, err := processFile(fset, astFile, minVariadic, verboseOut, removeOnly)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -265,8 +267,8 @@ func processDirectoryWithOutput(sourcePath, outPath string, verboseOut io.Writer
 	)
 }
 
-func processFile(fset *token.FileSet, astFile *ast.File, verboseOut io.Writer, removeOnly bool) (replacements astvisit.NodeReplacements, imports astvisit.Imports, err error) {
-	defer errs.WrapWithFuncParams(&err, fset, astFile, verboseOut, removeOnly)
+func processFile(fset *token.FileSet, astFile *ast.File, minVariadic bool, verboseOut io.Writer, removeOnly bool) (replacements astvisit.NodeReplacements, imports astvisit.Imports, err error) {
+	defer errs.WrapWithFuncParams(&err, fset, astFile, minVariadic, verboseOut, removeOnly)
 
 	imports = make(astvisit.Imports)
 
@@ -304,7 +306,13 @@ func processFile(fset *token.FileSet, astFile *ast.File, verboseOut io.Writer, r
 			return true
 		}
 
-		replacement := generateWrapStatement(fun)
+		// If already using variadic WrapWithFuncParams and minVariadic is false, keep it variadic
+		var replacement string
+		if !minVariadic && isVariadicWrapWithFuncParams(deferStmt) {
+			replacement = generateVariadicWrapStatement(fun)
+		} else {
+			replacement = generateWrapStatement(fun)
+		}
 		if verboseOut != nil {
 			fmt.Fprintf(verboseOut, "%s: replacing defer errs.Wrap with %s\n", fset.Position(deferStmt.Pos()), replacement)
 		}
@@ -381,6 +389,26 @@ func isDeferErrsWrap(stmt *ast.DeferStmt) bool {
 	}
 
 	return strings.HasPrefix(call.Sel.Name, "Wrap")
+}
+
+// isVariadicWrapWithFuncParams checks if a defer statement is calling
+// the variadic errs.WrapWithFuncParams function (not a specialized version).
+func isVariadicWrapWithFuncParams(stmt *ast.DeferStmt) bool {
+	call, ok := stmt.Call.Fun.(*ast.SelectorExpr)
+	if !ok {
+		return false
+	}
+
+	ident, ok := call.X.(*ast.Ident)
+	if !ok {
+		return false
+	}
+
+	if ident.Name != "errs" {
+		return false
+	}
+
+	return call.Sel.Name == "WrapWithFuncParams"
 }
 
 func copyFile(src, dst string) error {

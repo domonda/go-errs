@@ -47,9 +47,10 @@ import (
 )
 
 var (
-	outPath   string
-	verbose   bool
-	printHelp bool
+	outPath     string
+	verbose     bool
+	minVariadic bool
+	printHelp   bool
 )
 
 func main() {
@@ -72,6 +73,7 @@ func main() {
 	fs := flag.NewFlagSet(command, flag.ExitOnError)
 	fs.StringVar(&outPath, "out", "", "output to different location instead of modifying source")
 	fs.BoolVar(&verbose, "verbose", false, "print progress information")
+	fs.BoolVar(&minVariadic, "minvariadic", false, "minimize use of variadic WrapWithFuncParams")
 	fs.BoolVar(&printHelp, "help", false, "show help message")
 	fs.Parse(os.Args[2:])
 
@@ -109,7 +111,7 @@ func main() {
 	case "remove":
 		err = rewrite.Remove(sourcePath, outPath, recursive, verboseOut)
 	case "replace":
-		err = rewrite.Replace(sourcePath, outPath, recursive, verboseOut)
+		err = rewrite.Replace(sourcePath, outPath, recursive, minVariadic, verboseOut)
 	default:
 		fmt.Fprintf(os.Stderr, "error: unknown command %q\n", command)
 		printUsage()
@@ -138,12 +140,14 @@ Arguments:
            - If file: process only that file
 
 Options:
-  -out <path>   Output to different location instead of modifying source
-                - If source is directory: create copy of directory structure
-                - If source is file: write to specified file path
-                - Non-Go files are copied unchanged
-  -verbose      Print progress information
-  -help         Show help message
+  -out <path>     Output to different location instead of modifying source
+                  - If source is directory: create copy of directory structure
+                  - If source is file: write to specified file path
+                  - Non-Go files are copied unchanged
+  -minvariadic    Use specialized WrapWithNFuncParams functions instead of
+                  preserving existing variadic WrapWithFuncParams calls
+  -verbose        Print progress information
+  -help           Show help message
 
 Examples:
   go-errs-wrap remove ./pkg/...

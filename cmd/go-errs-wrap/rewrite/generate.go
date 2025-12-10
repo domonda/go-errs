@@ -11,9 +11,7 @@ import (
 // It uses the optimized WrapWith0FuncParams through WrapWith10FuncParams for
 // 0-10 parameters, and falls back to the variadic WrapWithFuncParams for 11+.
 func generateWrapStatement(fun *funcInfo) string {
-	numParams := len(fun.paramNames)
-
-	switch {
+	switch numParams := len(fun.paramNames); {
 	case numParams == 0:
 		return fmt.Sprintf("defer errs.WrapWith0FuncParams(&%s)",
 			fun.errorResultName,
@@ -24,12 +22,16 @@ func generateWrapStatement(fun *funcInfo) string {
 		)
 	case numParams > 10:
 		// 11+ parameters: use variadic version
-		return fmt.Sprintf("defer errs.WrapWithFuncParams(&%s, %s)",
-			fun.errorResultName, strings.Join(fun.paramNames, ", "),
-		)
+		return generateVariadicWrapStatement(fun)
 	default:
 		return fmt.Sprintf("defer errs.WrapWith%dFuncParams(&%s, %s)",
 			numParams, fun.errorResultName, strings.Join(fun.paramNames, ", "),
 		)
 	}
+}
+
+func generateVariadicWrapStatement(fun *funcInfo) string {
+	return fmt.Sprintf("defer errs.WrapWithFuncParams(&%s, %s)",
+		fun.errorResultName, strings.Join(fun.paramNames, ", "),
+	)
 }
