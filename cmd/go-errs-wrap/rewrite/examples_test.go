@@ -40,7 +40,7 @@ func TestExamplesReplace(t *testing.T) {
 			require.NoError(t, err, "expected file should exist: %s", expectedPath)
 
 			// Run replace
-			err = Replace(inputPath, outputPath, nil)
+			err = Replace(inputPath, outputPath, false, nil)
 			require.NoError(t, err)
 
 			// Read actual output
@@ -84,7 +84,7 @@ func TestExamplesRemove(t *testing.T) {
 			require.NoError(t, err, "expected file should exist: %s", expectedPath)
 
 			// Run remove
-			err = Remove(inputPath, outputPath, nil)
+			err = Remove(inputPath, outputPath, false, nil)
 			require.NoError(t, err)
 
 			// Read actual output

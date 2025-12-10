@@ -23,10 +23,11 @@ import (
 //
 // If outPath is empty, files are modified in place.
 // If outPath is specified, results are written there instead.
-func Remove(sourcePath, outPath string, verboseOut io.Writer) (err error) {
-	defer errs.WrapWithFuncParams(&err, sourcePath, outPath, verboseOut)
+// If recursive is true, subdirectories are processed recursively.
+func Remove(sourcePath, outPath string, recursive bool, verboseOut io.Writer) (err error) {
+	defer errs.WrapWithFuncParams(&err, sourcePath, outPath, recursive, verboseOut)
 
-	return process(sourcePath, outPath, verboseOut, true)
+	return process(sourcePath, outPath, recursive, verboseOut, true)
 }
 
 // Replace replaces all defer errs.Wrap statements and //#wrap-result-err
@@ -35,14 +36,15 @@ func Remove(sourcePath, outPath string, verboseOut io.Writer) (err error) {
 //
 // If outPath is empty, files are modified in place.
 // If outPath is specified, results are written there instead.
-func Replace(sourcePath, outPath string, verboseOut io.Writer) (err error) {
-	defer errs.WrapWithFuncParams(&err, sourcePath, outPath, verboseOut)
+// If recursive is true, subdirectories are processed recursively.
+func Replace(sourcePath, outPath string, recursive bool, verboseOut io.Writer) (err error) {
+	defer errs.WrapWithFuncParams(&err, sourcePath, outPath, recursive, verboseOut)
 
-	return process(sourcePath, outPath, verboseOut, false)
+	return process(sourcePath, outPath, recursive, verboseOut, false)
 }
 
-func process(sourcePath, outPath string, verboseOut io.Writer, removeOnly bool) (err error) {
-	defer errs.WrapWithFuncParams(&err, sourcePath, outPath, verboseOut, removeOnly)
+func process(sourcePath, outPath string, recursive bool, verboseOut io.Writer, removeOnly bool) (err error) {
+	defer errs.WrapWithFuncParams(&err, sourcePath, outPath, recursive, verboseOut, removeOnly)
 
 	sourcePath, err = filepath.Abs(sourcePath)
 	if err != nil {
@@ -70,8 +72,13 @@ func process(sourcePath, outPath string, verboseOut io.Writer, removeOnly bool) 
 	}
 
 	// In-place modification
+	// Use "..." suffix for directories to recursively find all packages
+	path := sourcePath
+	if sourceInfo.IsDir() && recursive {
+		path = strings.TrimSuffix(sourcePath, "/") + "/..."
+	}
 	return astvisit.RewriteWithReplacements(
-		sourcePath,
+		path,
 		verboseOut,
 		nil, // modify in place
 		false,
@@ -193,7 +200,7 @@ func processDirectoryWithOutput(sourcePath, outPath string, verboseOut io.Writer
 
 	// Process Go files with astvisit
 	return astvisit.RewriteWithReplacements(
-		sourcePath+"...",
+		strings.TrimSuffix(sourcePath, "/")+"/...",
 		verboseOut,
 		nil, // We'll handle output ourselves
 		false,

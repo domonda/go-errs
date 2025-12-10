@@ -41,6 +41,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
 	"github.com/domonda/go-errs/cmd/go-errs-wrap/rewrite"
 )
@@ -52,25 +53,51 @@ var (
 )
 
 func main() {
-	flag.StringVar(&outPath, "out", "", "output to different location instead of modifying source")
-	flag.BoolVar(&verbose, "verbose", false, "print progress information")
-	flag.BoolVar(&printHelp, "help", false, "show help message")
-	flag.Parse()
+	// Check for help first
+	if len(os.Args) > 1 && (os.Args[1] == "-help" || os.Args[1] == "--help" || os.Args[1] == "-h") {
+		printUsage()
+		os.Exit(0)
+	}
+
+	// Need at least command and path
+	if len(os.Args) < 3 {
+		fmt.Fprintln(os.Stderr, "error: missing command and/or path argument")
+		printUsage()
+		os.Exit(1)
+	}
+
+	command := os.Args[1]
+
+	// Create a new FlagSet for parsing flags after the command
+	fs := flag.NewFlagSet(command, flag.ExitOnError)
+	fs.StringVar(&outPath, "out", "", "output to different location instead of modifying source")
+	fs.BoolVar(&verbose, "verbose", false, "print progress information")
+	fs.BoolVar(&printHelp, "help", false, "show help message")
+	fs.Parse(os.Args[2:])
 
 	if printHelp {
 		printUsage()
 		os.Exit(0)
 	}
 
-	args := flag.Args()
-	if len(args) < 2 {
-		fmt.Fprintln(os.Stderr, "error: missing command and/or path argument")
+	args := fs.Args()
+	if len(args) < 1 {
+		fmt.Fprintln(os.Stderr, "error: missing path argument")
 		printUsage()
 		os.Exit(1)
 	}
 
-	command := args[0]
-	sourcePath := args[1]
+	sourcePath := args[0]
+
+	// Check if user passed a "..." pattern (e.g., "./..." or "./pkg/...")
+	recursive := false
+	if strings.HasSuffix(sourcePath, "/...") {
+		sourcePath = strings.TrimSuffix(sourcePath, "/...")
+		recursive = true
+	} else if sourcePath == "..." {
+		sourcePath = "."
+		recursive = true
+	}
 
 	var verboseOut io.Writer
 	if verbose {
@@ -80,9 +107,9 @@ func main() {
 	var err error
 	switch command {
 	case "remove":
-		err = rewrite.Remove(sourcePath, outPath, verboseOut)
+		err = rewrite.Remove(sourcePath, outPath, recursive, verboseOut)
 	case "replace":
-		err = rewrite.Replace(sourcePath, outPath, verboseOut)
+		err = rewrite.Replace(sourcePath, outPath, recursive, verboseOut)
 	default:
 		fmt.Fprintf(os.Stderr, "error: unknown command %q\n", command)
 		printUsage()

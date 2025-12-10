@@ -129,7 +129,7 @@ func NoWrap(x int) error {
 	require.NoError(t, err)
 
 	// Run remove
-	err = Remove(inputFile, outDir, nil)
+	err = Remove(inputFile, outDir, false, nil)
 	require.NoError(t, err)
 
 	// Read output
@@ -188,7 +188,7 @@ func NoParams() (err error) {
 	require.NoError(t, err)
 
 	// Run replace
-	err = Replace(inputFile, outDir, nil)
+	err = Replace(inputFile, outDir, false, nil)
 	require.NoError(t, err)
 
 	// Read output
@@ -234,7 +234,7 @@ func NoNamedErr(x int) error {
 	require.NoError(t, err)
 
 	// Run replace (should not error, but should skip the function)
-	err = Replace(inputFile, outDir, nil)
+	err = Replace(inputFile, outDir, false, nil)
 	require.NoError(t, err)
 
 	// Read output - should be unchanged since the function was skipped
