@@ -295,6 +295,9 @@ func processFile(fset *token.FileSet, astFile *ast.File, minVariadic bool, verbo
 
 	imports = make(astvisit.Imports)
 
+	// Extract all aliases used to import go-errs (for detecting KeepSecret calls)
+	errsAliases := extractErrsAliases(astFile)
+
 	// For insert mode, track which functions already have defer errs.Wrap
 	funcsWithWrap := make(map[token.Pos]bool)
 	if mode == modeInsert {
@@ -349,6 +352,10 @@ func processFile(fset *token.FileSet, astFile *ast.File, minVariadic bool, verbo
 				)
 				return true
 			}
+
+			// Extract KeepSecret-wrapped parameters from the existing defer statement
+			// so they can be preserved in the replacement
+			fun.keepSecretNames = extractKeepSecretParams(deferStmt, errsAliases)
 
 			// If already using variadic WrapWithFuncParams and minVariadic is false, keep it variadic
 			var replacement string

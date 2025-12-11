@@ -674,3 +674,310 @@ func ProcessData(id string) (err error) {
 	// The pattern should be: defer...(&err, id)\n\n\t(next statement)
 	assert.Contains(t, outputStr, "defer errs.WrapWith1FuncParam(&err, id)\n\n")
 }
+
+func TestExtractErrsAliases(t *testing.T) {
+	tests := []struct {
+		name     string
+		code     string
+		expected map[string]bool
+	}{
+		{
+			name:     "no import",
+			code:     `package test`,
+			expected: map[string]bool{"errs": true}, // default fallback
+		},
+		{
+			name: "default import",
+			code: `package test
+import "github.com/domonda/go-errs"`,
+			expected: map[string]bool{"errs": true},
+		},
+		{
+			name: "aliased import",
+			code: `package test
+import e "github.com/domonda/go-errs"`,
+			expected: map[string]bool{"e": true},
+		},
+		{
+			name: "named import",
+			code: `package test
+import goerrs "github.com/domonda/go-errs"`,
+			expected: map[string]bool{"goerrs": true},
+		},
+		{
+			name: "multiple imports with alias",
+			code: `package test
+import (
+	"fmt"
+	myerrs "github.com/domonda/go-errs"
+	"os"
+)`,
+			expected: map[string]bool{"myerrs": true},
+		},
+		{
+			name: "other imports only",
+			code: `package test
+import (
+	"fmt"
+	"os"
+)`,
+			expected: map[string]bool{"errs": true}, // default fallback
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fset := token.NewFileSet()
+			file, err := parser.ParseFile(fset, "test.go", tt.code, parser.ImportsOnly)
+			require.NoError(t, err)
+
+			result := extractErrsAliases(file)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+func TestExtractKeepSecretParams(t *testing.T) {
+	tests := []struct {
+		name     string
+		code     string
+		expected map[string]bool
+	}{
+		{
+			name: "no KeepSecret",
+			code: `package test
+func f() { defer errs.WrapWithFuncParams(&err, ctx, id) }`,
+			expected: map[string]bool{},
+		},
+		{
+			name: "one KeepSecret",
+			code: `package test
+func f() { defer errs.WrapWithFuncParams(&err, ctx, errs.KeepSecret(password)) }`,
+			expected: map[string]bool{"password": true},
+		},
+		{
+			name: "multiple KeepSecret",
+			code: `package test
+func f() { defer errs.WrapWithFuncParams(&err, errs.KeepSecret(apiKey), ctx, errs.KeepSecret(token)) }`,
+			expected: map[string]bool{"apiKey": true, "token": true},
+		},
+		{
+			name: "KeepSecret with specialized function",
+			code: `package test
+func f() { defer errs.WrapWith2FuncParams(&err, ctx, errs.KeepSecret(secret)) }`,
+			expected: map[string]bool{"secret": true},
+		},
+		{
+			name: "all params KeepSecret",
+			code: `package test
+func f() { defer errs.WrapWith2FuncParams(&err, errs.KeepSecret(key), errs.KeepSecret(pwd)) }`,
+			expected: map[string]bool{"key": true, "pwd": true},
+		},
+		{
+			name: "KeepSecret with aliased import",
+			code: `package test
+import e "github.com/domonda/go-errs"
+func f() { defer e.WrapWithFuncParams(&err, ctx, e.KeepSecret(password)) }`,
+			expected: map[string]bool{"password": true},
+		},
+		{
+			name: "KeepSecret with named import",
+			code: `package test
+import goerrs "github.com/domonda/go-errs"
+func f() { defer goerrs.WrapWith2FuncParams(&err, goerrs.KeepSecret(key), ctx) }`,
+			expected: map[string]bool{"key": true},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fset := token.NewFileSet()
+			file, err := parser.ParseFile(fset, "test.go", tt.code, 0)
+			require.NoError(t, err)
+
+			var deferStmt *ast.DeferStmt
+			ast.Inspect(file, func(n ast.Node) bool {
+				if ds, ok := n.(*ast.DeferStmt); ok {
+					deferStmt = ds
+					return false
+				}
+				return true
+			})
+			require.NotNil(t, deferStmt, "no defer statement found")
+
+			errsAliases := extractErrsAliases(file)
+			result := extractKeepSecretParams(deferStmt, errsAliases)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+func TestReplacePreservesKeepSecret(t *testing.T) {
+	// Create a temporary directory for test files
+	tmpDir, err := os.MkdirTemp("", "go-errs-wrap-test-*")
+	require.NoError(t, err)
+	defer os.RemoveAll(tmpDir)
+
+	// Create test input file with KeepSecret-wrapped parameters
+	inputCode := `package test
+
+import "github.com/domonda/go-errs"
+
+func ProcessWithSecret(ctx context.Context, password string) (err error) {
+	defer errs.WrapWithFuncParams(&err, ctx, errs.KeepSecret(password))
+
+	return nil
+}
+
+func MultipleSecrets(apiKey, token, userID string) (err error) {
+	defer errs.WrapWith3FuncParams(&err, errs.KeepSecret(apiKey), errs.KeepSecret(token), userID)
+
+	return nil
+}
+`
+
+	inputFile := filepath.Join(tmpDir, "input.go")
+	err = os.WriteFile(inputFile, []byte(inputCode), 0644)
+	require.NoError(t, err)
+
+	// Create output directory
+	outDir := filepath.Join(tmpDir, "output")
+	err = os.MkdirAll(outDir, 0755)
+	require.NoError(t, err)
+
+	// Run replace (preserving variadic)
+	err = Replace(inputFile, outDir, false, false, nil)
+	require.NoError(t, err)
+
+	// Read output
+	outputFile := filepath.Join(outDir, "input.go")
+	output, err := os.ReadFile(outputFile)
+	require.NoError(t, err)
+
+	outputStr := string(output)
+
+	// Verify KeepSecret is preserved for password
+	assert.Contains(t, outputStr, "errs.KeepSecret(password)")
+	assert.NotContains(t, outputStr, "&err, ctx, password)") // Should not have unwrapped password
+
+	// Verify multiple KeepSecret are preserved
+	assert.Contains(t, outputStr, "errs.KeepSecret(apiKey)")
+	assert.Contains(t, outputStr, "errs.KeepSecret(token)")
+	assert.NotContains(t, outputStr, "errs.KeepSecret(userID)") // userID was not wrapped
+
+	// Verify userID is present unwrapped (as expected)
+	assert.Contains(t, outputStr, "userID)")
+}
+
+func TestReplacePreservesKeepSecretWithMinVariadic(t *testing.T) {
+	// Test that KeepSecret is preserved even with minVariadic=true
+	tmpDir, err := os.MkdirTemp("", "go-errs-wrap-test-*")
+	require.NoError(t, err)
+	defer os.RemoveAll(tmpDir)
+
+	inputCode := `package test
+
+import "github.com/domonda/go-errs"
+
+func ProcessWithSecret(ctx any, password string) (err error) {
+	defer errs.WrapWithFuncParams(&err, ctx, errs.KeepSecret(password))
+	return nil
+}
+`
+
+	inputFile := filepath.Join(tmpDir, "input.go")
+	err = os.WriteFile(inputFile, []byte(inputCode), 0644)
+	require.NoError(t, err)
+
+	outDir := filepath.Join(tmpDir, "output")
+	err = os.MkdirAll(outDir, 0755)
+	require.NoError(t, err)
+
+	// Run replace with minVariadic=true
+	err = Replace(inputFile, outDir, false, true, nil)
+	require.NoError(t, err)
+
+	outputFile := filepath.Join(outDir, "input.go")
+	output, err := os.ReadFile(outputFile)
+	require.NoError(t, err)
+
+	outputStr := string(output)
+
+	// Should convert to specialized function but preserve KeepSecret
+	assert.Contains(t, outputStr, "WrapWith2FuncParams(&err, ctx, errs.KeepSecret(password))")
+}
+
+func TestGenerateWrapStatementWithKeepSecret(t *testing.T) {
+	tests := []struct {
+		name            string
+		funcInfo        *funcInfo
+		expectedVariadic string
+		expectedSpecial  string
+	}{
+		{
+			name: "one secret param",
+			funcInfo: &funcInfo{
+				funcName:        "test",
+				paramNames:      []string{"ctx", "password"},
+				keepSecretNames: map[string]bool{"password": true},
+				errorResultName: "err",
+			},
+			expectedVariadic: "defer errs.WrapWithFuncParams(&err, ctx, errs.KeepSecret(password))",
+			expectedSpecial:  "defer errs.WrapWith2FuncParams(&err, ctx, errs.KeepSecret(password))",
+		},
+		{
+			name: "multiple secret params",
+			funcInfo: &funcInfo{
+				funcName:        "test",
+				paramNames:      []string{"apiKey", "ctx", "token"},
+				keepSecretNames: map[string]bool{"apiKey": true, "token": true},
+				errorResultName: "err",
+			},
+			expectedVariadic: "defer errs.WrapWithFuncParams(&err, errs.KeepSecret(apiKey), ctx, errs.KeepSecret(token))",
+			expectedSpecial:  "defer errs.WrapWith3FuncParams(&err, errs.KeepSecret(apiKey), ctx, errs.KeepSecret(token))",
+		},
+		{
+			name: "all params secret",
+			funcInfo: &funcInfo{
+				funcName:        "test",
+				paramNames:      []string{"key", "secret"},
+				keepSecretNames: map[string]bool{"key": true, "secret": true},
+				errorResultName: "err",
+			},
+			expectedVariadic: "defer errs.WrapWithFuncParams(&err, errs.KeepSecret(key), errs.KeepSecret(secret))",
+			expectedSpecial:  "defer errs.WrapWith2FuncParams(&err, errs.KeepSecret(key), errs.KeepSecret(secret))",
+		},
+		{
+			name: "single secret param",
+			funcInfo: &funcInfo{
+				funcName:        "test",
+				paramNames:      []string{"password"},
+				keepSecretNames: map[string]bool{"password": true},
+				errorResultName: "err",
+			},
+			expectedVariadic: "defer errs.WrapWithFuncParams(&err, errs.KeepSecret(password))",
+			expectedSpecial:  "defer errs.WrapWith1FuncParam(&err, errs.KeepSecret(password))",
+		},
+		{
+			name: "no secret params",
+			funcInfo: &funcInfo{
+				funcName:        "test",
+				paramNames:      []string{"ctx", "id"},
+				keepSecretNames: nil,
+				errorResultName: "err",
+			},
+			expectedVariadic: "defer errs.WrapWithFuncParams(&err, ctx, id)",
+			expectedSpecial:  "defer errs.WrapWith2FuncParams(&err, ctx, id)",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			variadic := generateVariadicWrapStatement(tt.funcInfo)
+			assert.Equal(t, tt.expectedVariadic, variadic)
+
+			special := generateWrapStatement(tt.funcInfo)
+			assert.Equal(t, tt.expectedSpecial, special)
+		})
+	}
+}

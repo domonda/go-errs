@@ -175,9 +175,30 @@ if errs.ShouldLog(err) {
 err = errs.DontLog(err)
 ```
 
-### Customizing Sensitive Data Display
+### Protecting Sensitive Data
 
-Implement `CallStackPrintable` to control how your types appear in error messages:
+#### Using KeepSecret for Quick Protection
+
+For simple cases where you want to prevent a parameter from appearing in logs, use `errs.KeepSecret(param)`:
+
+```go
+func Login(username string, password string) (err error) {
+    defer errs.WrapWithFuncParams(&err, username, errs.KeepSecret(password))
+    // Error messages will show: Login("admin", ***REDACTED***)
+    return authenticate(username, password)
+}
+```
+
+The `Secret` interface wraps a value and ensures it's never logged or printed:
+- `String()` returns `"***REDACTED***"`
+- Implements `CallStackPrintable` to ensure redaction in error call stacks
+- Use `secret.Secrect()` to retrieve the actual value when needed
+
+**Important:** Wrapping a parameter with `errs.KeepSecret()` is preferable to omitting it entirely from a `defer errs.WrapWith*` statement. When you run `go-errs-wrap replace`, omitted parameters will be added back, but `KeepSecret`-wrapped parameters are preserved in their wrapped form.
+
+#### Custom Types with CallStackPrintable
+
+For custom types, implement `CallStackPrintable` to control how they appear in error messages:
 
 ```go
 type Password struct {
@@ -411,6 +432,28 @@ The tool:
 - Uses the optimized function variant based on parameter count
 - Skips functions without named error results
 - Skips functions that already have a `defer errs.Wrap*` statement
+- Preserves `errs.KeepSecret(param)` wrapped parameters during replacement
+
+### Preserving Secrets During Replacement
+
+When using `go-errs-wrap replace`, parameters wrapped with `errs.KeepSecret()` are preserved. This allows developers to mark sensitive parameters once and have that protection maintained across replacements:
+
+```go
+// Before: developer manually wrapped password with KeepSecret
+func Login(username, password string) (err error) {
+    defer errs.WrapWithFuncParams(&err, username, errs.KeepSecret(password))
+    return authenticate(username, password)
+}
+
+// After running: go-errs-wrap replace -minvariadic file.go
+// The KeepSecret wrapping is preserved:
+func Login(username, password string) (err error) {
+    defer errs.WrapWith2FuncParams(&err, username, errs.KeepSecret(password))
+    return authenticate(username, password)
+}
+```
+
+This is preferable to omitting sensitive parameters entirely, as omitted parameters would be re-added by the tool.
 
 ## Compatibility
 
