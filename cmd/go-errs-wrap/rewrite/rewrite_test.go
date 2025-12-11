@@ -417,7 +417,7 @@ func Outer(a int) (err error) {
 	file, err := parser.ParseFile(fset, "test.go", code, parser.ParseComments)
 	require.NoError(t, err)
 
-	replacements, imports, err := processFile(fset, file, true, nil, false)
+	replacements, imports, err := processFile(fset, file, true, nil, modeReplace)
 	require.NoError(t, err)
 
 	// Should have one replacement for the anonymous function
@@ -492,4 +492,185 @@ func TestMarkerCommentVariations(t *testing.T) {
 			assert.Equal(t, tt.isMatch, isMatch)
 		})
 	}
+}
+
+func TestInsert(t *testing.T) {
+	// Create a temporary directory for test files
+	tmpDir, err := os.MkdirTemp("", "go-errs-wrap-test-*")
+	require.NoError(t, err)
+	defer os.RemoveAll(tmpDir)
+
+	// Create test input file without any defer errs.Wrap statements
+	inputCode := `package test
+
+func ProcessData(ctx context.Context, id string) (err error) {
+	return nil
+}
+
+func LoadFile(path string) (data []byte, err error) {
+	return nil, nil
+}
+
+func NoNamedErr(x int) error {
+	return nil
+}
+
+func NoError(x int) int {
+	return x
+}
+`
+
+	inputFile := filepath.Join(tmpDir, "input.go")
+	err = os.WriteFile(inputFile, []byte(inputCode), 0644)
+	require.NoError(t, err)
+
+	// Create output directory
+	outDir := filepath.Join(tmpDir, "output")
+	err = os.MkdirAll(outDir, 0755)
+	require.NoError(t, err)
+
+	// Run insert
+	err = Insert(inputFile, outDir, false, true, nil)
+	require.NoError(t, err)
+
+	// Read output
+	outputFile := filepath.Join(outDir, "input.go")
+	output, err := os.ReadFile(outputFile)
+	require.NoError(t, err)
+
+	outputStr := string(output)
+
+	// Verify defer statements were inserted for functions with named error results
+	assert.Contains(t, outputStr, "defer errs.WrapWith2FuncParams(&err, ctx, id)")
+	assert.Contains(t, outputStr, "defer errs.WrapWith1FuncParam(&err, path)")
+
+	// Verify no defer was inserted for functions without named error result
+	// or without error return type at all
+	assert.NotContains(t, outputStr, "WrapWith1FuncParam(&err, x)") // NoNamedErr has unnamed error
+}
+
+func TestInsertSkipsExisting(t *testing.T) {
+	// Create a temporary directory for test files
+	tmpDir, err := os.MkdirTemp("", "go-errs-wrap-test-*")
+	require.NoError(t, err)
+	defer os.RemoveAll(tmpDir)
+
+	// Create test input file with one function that already has defer errs.Wrap
+	inputCode := `package test
+
+import "github.com/domonda/go-errs"
+
+func AlreadyWrapped(ctx context.Context) (err error) {
+	defer errs.WrapWith1FuncParam(&err, ctx)
+
+	return nil
+}
+
+func NeedsWrap(id string) (err error) {
+	return nil
+}
+`
+
+	inputFile := filepath.Join(tmpDir, "input.go")
+	err = os.WriteFile(inputFile, []byte(inputCode), 0644)
+	require.NoError(t, err)
+
+	// Create output directory
+	outDir := filepath.Join(tmpDir, "output")
+	err = os.MkdirAll(outDir, 0755)
+	require.NoError(t, err)
+
+	// Run insert
+	err = Insert(inputFile, outDir, false, true, nil)
+	require.NoError(t, err)
+
+	// Read output
+	outputFile := filepath.Join(outDir, "input.go")
+	output, err := os.ReadFile(outputFile)
+	require.NoError(t, err)
+
+	outputStr := string(output)
+
+	// AlreadyWrapped should still have exactly one defer (not duplicated)
+	assert.Equal(t, 1, strings.Count(outputStr, "WrapWith1FuncParam(&err, ctx)"))
+
+	// NeedsWrap should have the new defer inserted
+	assert.Contains(t, outputStr, "WrapWith1FuncParam(&err, id)")
+}
+
+func TestInsertEmptyFunctionBody(t *testing.T) {
+	// Create a temporary directory for test files
+	tmpDir, err := os.MkdirTemp("", "go-errs-wrap-test-*")
+	require.NoError(t, err)
+	defer os.RemoveAll(tmpDir)
+
+	// Create test input file with empty function body
+	inputCode := `package test
+
+func EmptyBody() (err error) {
+}
+`
+
+	inputFile := filepath.Join(tmpDir, "input.go")
+	err = os.WriteFile(inputFile, []byte(inputCode), 0644)
+	require.NoError(t, err)
+
+	// Create output directory
+	outDir := filepath.Join(tmpDir, "output")
+	err = os.MkdirAll(outDir, 0755)
+	require.NoError(t, err)
+
+	// Run insert
+	err = Insert(inputFile, outDir, false, true, nil)
+	require.NoError(t, err)
+
+	// Read output
+	outputFile := filepath.Join(outDir, "input.go")
+	output, err := os.ReadFile(outputFile)
+	require.NoError(t, err)
+
+	outputStr := string(output)
+
+	// Verify defer statement was inserted even in empty function body
+	assert.Contains(t, outputStr, "defer errs.WrapWith0FuncParams(&err)")
+}
+
+func TestInsertWithEmptyLineAfter(t *testing.T) {
+	// Create a temporary directory for test files
+	tmpDir, err := os.MkdirTemp("", "go-errs-wrap-test-*")
+	require.NoError(t, err)
+	defer os.RemoveAll(tmpDir)
+
+	// Create test input file
+	inputCode := `package test
+
+func ProcessData(id string) (err error) {
+	x := 1
+	return nil
+}
+`
+
+	inputFile := filepath.Join(tmpDir, "input.go")
+	err = os.WriteFile(inputFile, []byte(inputCode), 0644)
+	require.NoError(t, err)
+
+	// Create output directory
+	outDir := filepath.Join(tmpDir, "output")
+	err = os.MkdirAll(outDir, 0755)
+	require.NoError(t, err)
+
+	// Run insert
+	err = Insert(inputFile, outDir, false, true, nil)
+	require.NoError(t, err)
+
+	// Read output
+	outputFile := filepath.Join(outDir, "input.go")
+	output, err := os.ReadFile(outputFile)
+	require.NoError(t, err)
+
+	outputStr := string(output)
+
+	// Verify there's an empty line after the defer statement
+	// The pattern should be: defer...(&err, id)\n\n\t(next statement)
+	assert.Contains(t, outputStr, "defer errs.WrapWith1FuncParam(&err, id)\n\n")
 }

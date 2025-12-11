@@ -2,8 +2,9 @@
 go-errs-wrap is a code transformation tool for managing error wrapping in Go.
 
 It scans Go source files for defer errs.Wrap statements or //#wrap-result-err
-marker comments and can either remove them or replace them with properly
-generated defer errs.WrapWithFuncParams statements.
+marker comments and can remove them, replace them with properly generated
+defer errs.WrapWithFuncParams statements, or insert new wrap statements into
+functions that don't have them yet.
 
 # Usage
 
@@ -13,6 +14,8 @@ generated defer errs.WrapWithFuncParams statements.
 
 	remove   Remove all defer errs.Wrap or //#wrap-result-err lines
 	replace  Replace defer errs.Wrap or //#wrap-result-err with generated code
+	insert   Insert defer errs.Wrap at the first line of functions with named
+	         error results that don't already have one (followed by empty line)
 
 # Options
 
@@ -29,6 +32,10 @@ Remove all wrap statements from a directory:
 Replace wrap statements in a single file:
 
 	go-errs-wrap replace ./pkg/mypackage/file.go
+
+Insert wrap statements into functions missing them:
+
+	go-errs-wrap insert ./pkg/mypackage/file.go
 
 Replace and output to a different location:
 
@@ -112,6 +119,8 @@ func main() {
 		err = rewrite.Remove(sourcePath, outPath, recursive, verboseOut)
 	case "replace":
 		err = rewrite.Replace(sourcePath, outPath, recursive, minVariadic, verboseOut)
+	case "insert":
+		err = rewrite.Insert(sourcePath, outPath, recursive, minVariadic, verboseOut)
 	default:
 		fmt.Fprintf(os.Stderr, "error: unknown command %q\n", command)
 		printUsage()
@@ -133,6 +142,8 @@ Usage:
 Commands:
   remove   Remove all defer errs.Wrap or //#wrap-result-err lines
   replace  Replace defer errs.Wrap or //#wrap-result-err with generated code
+  insert   Insert defer errs.Wrap at the first line of functions with named
+           error results that don't already have one (followed by empty line)
 
 Arguments:
   path     Source directory or file path
@@ -152,5 +163,6 @@ Options:
 Examples:
   go-errs-wrap remove ./pkg/...
   go-errs-wrap replace ./pkg/mypackage/file.go
+  go-errs-wrap insert ./pkg/mypackage/file.go
   go-errs-wrap replace -out ./output ./pkg/mypackage`)
 }

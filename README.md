@@ -316,6 +316,102 @@ return errs.New("something failed")
 return errs.Errorf("failed: %w", err)
 ```
 
+## go-errs-wrap CLI Tool
+
+The `go-errs-wrap` command-line tool helps manage `defer errs.WrapWithFuncParams` statements in your Go code.
+
+### Installation
+
+```bash
+go install github.com/domonda/go-errs/cmd/go-errs-wrap@latest
+```
+
+### Commands
+
+| Command | Description |
+|---------|-------------|
+| `remove` | Remove all `defer errs.Wrap*` or `//#wrap-result-err` lines |
+| `replace` | Replace existing `defer errs.Wrap*` or `//#wrap-result-err` with properly generated code |
+| `insert` | Insert `defer errs.Wrap*` at the first line of functions with named error results that don't already have one |
+
+### Usage Examples
+
+**Insert wrap statements into all functions missing them:**
+
+```bash
+# Process a single file
+go-errs-wrap insert ./pkg/mypackage/file.go
+
+# Process all Go files in a directory recursively
+go-errs-wrap insert ./pkg/...
+```
+
+**Replace outdated wrap statements with correct ones:**
+
+```bash
+# Update parameters in existing wrap statements
+go-errs-wrap replace ./pkg/mypackage/file.go
+```
+
+**Remove all wrap statements:**
+
+```bash
+go-errs-wrap remove ./pkg/...
+```
+
+**Write changes to another output location:**
+
+```bash
+# Output to a different location
+go-errs-wrap insert -out ./output ./pkg/mypackage
+
+# Show verbose progress
+go-errs-wrap insert -verbose ./pkg/...
+```
+
+### Options
+
+| Option | Description |
+|--------|-------------|
+| `-out <path>` | Output to different location instead of modifying source |
+| `-minvariadic` | Use specialized `WrapWithNFuncParams` functions instead of variadic |
+| `-verbose` | Print progress information |
+| `-help` | Show help message |
+
+### Example Transformation
+
+Given this input file:
+
+```go
+package example
+
+func ProcessData(ctx context.Context, id string) (err error) {
+    return doWork(ctx, id)
+}
+```
+
+Running `go-errs-wrap insert example.go` produces:
+
+```go
+package example
+
+import "github.com/domonda/go-errs"
+
+func ProcessData(ctx context.Context, id string) (err error) {
+    defer errs.WrapWith2FuncParams(&err, ctx, id)
+
+    return doWork(ctx, id)
+}
+```
+
+The tool:
+- Inserts the `defer errs.Wrap*` statement at the first line of the function body
+- Adds an empty line after the defer statement
+- Automatically adds the required import
+- Uses the optimized function variant based on parameter count
+- Skips functions without named error results
+- Skips functions that already have a `defer errs.Wrap*` statement
+
 ## Compatibility
 
 - **Go version:** Requires Go 1.13+ for error wrapping, Go 1.23+ for iterator support
