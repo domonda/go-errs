@@ -324,3 +324,132 @@ func TestRoot_WithErrorsJoin(t *testing.T) {
 		assert.Equal(t, joined, result)
 	})
 }
+
+func TestUnwrapCallStack(t *testing.T) {
+	sentinel := Sentinel("sentinel error")
+
+	t.Run("nil error", func(t *testing.T) {
+		result := UnwrapCallStack(nil)
+		assert.Nil(t, result)
+	})
+
+	t.Run("error without callstack", func(t *testing.T) {
+		err := errors.New("plain error")
+		result := UnwrapCallStack(err)
+		assert.Equal(t, err, result, "should return the same error if not wrapped with callstack")
+	})
+
+	t.Run("error with single callstack wrapper", func(t *testing.T) {
+		wrapped := WrapWithCallStack(sentinel)
+		result := UnwrapCallStack(wrapped)
+		assert.Equal(t, sentinel, result, "should unwrap single callstack wrapper")
+	})
+
+	t.Run("error with multiple callstack wrappers", func(t *testing.T) {
+		wrapped1 := WrapWithCallStack(sentinel)
+		wrapped2 := WrapWithCallStack(wrapped1)
+		wrapped3 := WrapWithCallStack(wrapped2)
+
+		result := UnwrapCallStack(wrapped3)
+		assert.Equal(t, sentinel, result, "should unwrap all callstack wrappers")
+	})
+
+	t.Run("error with callstack and func params", func(t *testing.T) {
+		wrapped := wrapWithFuncParamsSkip(0, sentinel, "param1", 42)
+		result := UnwrapCallStack(wrapped)
+		assert.Equal(t, sentinel, result, "should unwrap callstack with func params")
+	})
+
+	t.Run("preserves error chain", func(t *testing.T) {
+		// Create a chain: sentinel <- fmt.Errorf <- WrapWithCallStack
+		wrapped1 := fmt.Errorf("wrapped: %w", sentinel)
+		wrapped2 := WrapWithCallStack(wrapped1)
+
+		result := UnwrapCallStack(wrapped2)
+		assert.Equal(t, wrapped1, result, "should only remove top callstack, preserving error chain")
+
+		// The result should still be able to unwrap to sentinel
+		assert.ErrorIs(t, result, sentinel)
+	})
+
+	t.Run("does not unwrap non-callstack wrappers", func(t *testing.T) {
+		// Create: sentinel <- fmt.Errorf
+		wrapped := fmt.Errorf("context: %w", sentinel)
+
+		result := UnwrapCallStack(wrapped)
+		assert.Equal(t, wrapped, result, "should not unwrap non-callstack errors")
+	})
+
+	t.Run("callstack in middle of chain", func(t *testing.T) {
+		// Create: sentinel <- WrapWithCallStack <- fmt.Errorf <- WrapWithCallStack
+		wrapped1 := WrapWithCallStack(sentinel)
+		wrapped2 := fmt.Errorf("context: %w", wrapped1)
+		wrapped3 := WrapWithCallStack(wrapped2)
+
+		result := UnwrapCallStack(wrapped3)
+		assert.Equal(t, wrapped2, result, "should only remove top-level callstack")
+
+		// The wrapped1 callstack should still be in the chain
+		assert.True(t, Has[*withCallStack](result), "callstack wrapper in middle should be preserved")
+	})
+
+	t.Run("difference between UnwrapCallStack and Root", func(t *testing.T) {
+		// Create: sentinel <- fmt.Errorf <- WrapWithCallStack
+		wrapped1 := fmt.Errorf("layer1: %w", sentinel)
+		wrapped2 := WrapWithCallStack(wrapped1)
+
+		// UnwrapCallStack only removes callstack wrappers
+		withoutStack := UnwrapCallStack(wrapped2)
+		assert.Equal(t, wrapped1, withoutStack)
+
+		// Root unwraps everything to the root cause
+		root := Root(wrapped2)
+		assert.Equal(t, sentinel, root)
+
+		assert.NotEqual(t, withoutStack, root, "UnwrapCallStack and Root should produce different results")
+	})
+
+	t.Run("with errors.Join", func(t *testing.T) {
+		e0 := Sentinel("e0")
+		e1 := Sentinel("e1")
+		joined := errors.Join(e0, e1)
+		wrapped := WrapWithCallStack(joined)
+
+		result := UnwrapCallStack(wrapped)
+		assert.Equal(t, joined, result, "should unwrap callstack from errors.Join")
+	})
+
+	t.Run("custom wrapper type", func(t *testing.T) {
+		custom := errWrapper{Wrapped: sentinel}
+		wrapped := WrapWithCallStack(custom)
+
+		result := UnwrapCallStack(wrapped)
+		assert.Equal(t, custom, result, "should preserve custom wrapper types")
+	})
+
+	t.Run("comparison use case", func(t *testing.T) {
+		// Demonstrate using UnwrapCallStack for error comparison
+		err1 := WrapWithCallStack(sentinel)
+		err2 := WrapWithCallStack(sentinel)
+
+		// Different callstack wrappers are not equal
+		assert.NotEqual(t, err1, err2, "errors with different callstacks should not be equal")
+
+		// But unwrapping reveals the same underlying error
+		unwrapped1 := UnwrapCallStack(err1)
+		unwrapped2 := UnwrapCallStack(err2)
+		assert.Equal(t, unwrapped1, unwrapped2, "unwrapped errors should be equal")
+		assert.Equal(t, sentinel, unwrapped1)
+		assert.Equal(t, sentinel, unwrapped2)
+	})
+
+	t.Run("mixed callstack types", func(t *testing.T) {
+		// Mix WrapWithCallStack and wrapWithFuncParamsSkip
+		wrapped1 := WrapWithCallStack(sentinel)
+		wrapped2 := wrapWithFuncParamsSkip(0, wrapped1, "param")
+		wrapped3 := WrapWithCallStack(wrapped2)
+
+		result := UnwrapCallStack(wrapped3)
+		assert.Equal(t, sentinel, result, "should unwrap all types of callstack wrappers")
+	})
+}
