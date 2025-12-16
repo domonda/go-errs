@@ -191,7 +191,7 @@ func ProcessWithSpecialized(ctx context.Context) (err error) {
 	require.NoError(t, err)
 
 	// Run replace with minVariadic=false to preserve variadic calls
-	err = Replace(inputFile, outDir, false, false, nil)
+	err = Replace(inputFile, outDir, false, false, false, nil)
 	require.NoError(t, err)
 
 	// Read output
@@ -233,7 +233,7 @@ func VariadicFunc(ctx any, id string) (err error) {
 	require.NoError(t, err)
 
 	// Run replace with minVariadic=true to convert variadic to specialized
-	err = Replace(inputFile, outDir, false, true, nil)
+	err = Replace(inputFile, outDir, false, true, false, nil)
 	require.NoError(t, err)
 
 	outputFile := filepath.Join(outDir, "input.go")
@@ -285,7 +285,7 @@ func NoWrap(x int) error {
 	require.NoError(t, err)
 
 	// Run remove
-	err = Remove(inputFile, outDir, false, nil)
+	err = Remove(inputFile, outDir, false, false, nil)
 	require.NoError(t, err)
 
 	// Read output
@@ -344,7 +344,7 @@ func NoParams() (err error) {
 	require.NoError(t, err)
 
 	// Run replace with minVariadic=false to preserve variadic calls
-	err = Replace(inputFile, outDir, false, false, nil)
+	err = Replace(inputFile, outDir, false, false, false, nil)
 	require.NoError(t, err)
 
 	// Read output
@@ -390,7 +390,7 @@ func NoNamedErr(x int) error {
 	require.NoError(t, err)
 
 	// Run replace (should not error, but should skip the function)
-	err = Replace(inputFile, outDir, false, true, nil)
+	err = Replace(inputFile, outDir, false, true, false, nil)
 	require.NoError(t, err)
 
 	// Read output - should be unchanged since the function was skipped
@@ -530,7 +530,7 @@ func NoError(x int) int {
 	require.NoError(t, err)
 
 	// Run insert
-	err = Insert(inputFile, outDir, false, true, nil)
+	err = Insert(inputFile, outDir, false, true, false, nil)
 	require.NoError(t, err)
 
 	// Read output
@@ -581,7 +581,7 @@ func NeedsWrap(id string) (err error) {
 	require.NoError(t, err)
 
 	// Run insert
-	err = Insert(inputFile, outDir, false, true, nil)
+	err = Insert(inputFile, outDir, false, true, false, nil)
 	require.NoError(t, err)
 
 	// Read output
@@ -621,7 +621,7 @@ func EmptyBody() (err error) {
 	require.NoError(t, err)
 
 	// Run insert
-	err = Insert(inputFile, outDir, false, true, nil)
+	err = Insert(inputFile, outDir, false, true, false, nil)
 	require.NoError(t, err)
 
 	// Read output
@@ -660,7 +660,7 @@ func ProcessData(id string) (err error) {
 	require.NoError(t, err)
 
 	// Run insert
-	err = Insert(inputFile, outDir, false, true, nil)
+	err = Insert(inputFile, outDir, false, true, false, nil)
 	require.NoError(t, err)
 
 	// Read output
@@ -846,7 +846,7 @@ func MultipleSecrets(apiKey, token, userID string) (err error) {
 	require.NoError(t, err)
 
 	// Run replace (preserving variadic)
-	err = Replace(inputFile, outDir, false, false, nil)
+	err = Replace(inputFile, outDir, false, false, false, nil)
 	require.NoError(t, err)
 
 	// Read output
@@ -894,7 +894,7 @@ func ProcessWithSecret(ctx any, password string) (err error) {
 	require.NoError(t, err)
 
 	// Run replace with minVariadic=true
-	err = Replace(inputFile, outDir, false, true, nil)
+	err = Replace(inputFile, outDir, false, true, false, nil)
 	require.NoError(t, err)
 
 	outputFile := filepath.Join(outDir, "input.go")
@@ -980,4 +980,272 @@ func TestGenerateWrapStatementWithKeepSecret(t *testing.T) {
 			assert.Equal(t, tt.expectedSpecial, special)
 		})
 	}
+}
+
+func TestReplaceValidateMode(t *testing.T) {
+	// Create a temporary directory for test files
+	tmpDir, err := os.MkdirTemp("", "go-errs-wrap-test-*")
+	require.NoError(t, err)
+	defer os.RemoveAll(tmpDir)
+
+	// Create test input file with outdated wrap statements
+	inputCode := `package test
+
+func ProcessData(ctx context.Context, id string) (err error) {
+	defer errs.WrapWithFuncParams(&err, ctx) // outdated params
+
+	return nil
+}
+
+func LoadFile(path string) (data []byte, err error) {
+	//#wrap-result-err
+
+	return nil, nil
+}
+`
+
+	inputFile := filepath.Join(tmpDir, "input.go")
+	err = os.WriteFile(inputFile, []byte(inputCode), 0644)
+	require.NoError(t, err)
+
+	// Run replace with validate=true
+	err = Replace(inputFile, "", false, false, true, nil)
+
+	// Should return an error indicating missing replacements
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "missing error wrapper")
+
+	// Verify file was not modified
+	content, readErr := os.ReadFile(inputFile)
+	require.NoError(t, readErr)
+	assert.Equal(t, inputCode, string(content))
+}
+
+func TestReplaceValidateModeNoIssues(t *testing.T) {
+	// Create a temporary directory for test files
+	tmpDir, err := os.MkdirTemp("", "go-errs-wrap-test-*")
+	require.NoError(t, err)
+	defer os.RemoveAll(tmpDir)
+
+	// Create test input file with correct wrap statements
+	inputCode := `package test
+
+import "github.com/domonda/go-errs"
+
+func ProcessData(ctx context.Context, id string) (err error) {
+	defer errs.WrapWith2FuncParams(&err, ctx, id)
+
+	return nil
+}
+
+func NoError() {
+	return
+}
+`
+
+	inputFile := filepath.Join(tmpDir, "input.go")
+	err = os.WriteFile(inputFile, []byte(inputCode), 0644)
+	require.NoError(t, err)
+
+	// Run replace with validate=true
+	err = Replace(inputFile, "", false, false, true, nil)
+
+	// Should succeed with no errors
+	require.NoError(t, err)
+
+	// Verify file was not modified
+	content, readErr := os.ReadFile(inputFile)
+	require.NoError(t, readErr)
+	assert.Equal(t, inputCode, string(content))
+}
+
+func TestInsertValidateMode(t *testing.T) {
+	// Create a temporary directory for test files
+	tmpDir, err := os.MkdirTemp("", "go-errs-wrap-test-*")
+	require.NoError(t, err)
+	defer os.RemoveAll(tmpDir)
+
+	// Create test input file without defer statements
+	inputCode := `package test
+
+func ProcessData(ctx context.Context, id string) (err error) {
+	return nil
+}
+
+func LoadFile(path string) (data []byte, err error) {
+	return nil, nil
+}
+`
+
+	inputFile := filepath.Join(tmpDir, "input.go")
+	err = os.WriteFile(inputFile, []byte(inputCode), 0644)
+	require.NoError(t, err)
+
+	// Run insert with validate=true
+	err = Insert(inputFile, "", false, true, true, nil)
+
+	// Should return an error indicating missing insertions
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "missing error wrapper")
+
+	// Verify file was not modified
+	content, readErr := os.ReadFile(inputFile)
+	require.NoError(t, readErr)
+	assert.Equal(t, inputCode, string(content))
+}
+
+func TestInsertValidateModeNoIssues(t *testing.T) {
+	// Create a temporary directory for test files
+	tmpDir, err := os.MkdirTemp("", "go-errs-wrap-test-*")
+	require.NoError(t, err)
+	defer os.RemoveAll(tmpDir)
+
+	// Create test input file with all required defer statements
+	inputCode := `package test
+
+import "github.com/domonda/go-errs"
+
+func ProcessData(ctx context.Context, id string) (err error) {
+	defer errs.WrapWith2FuncParams(&err, ctx, id)
+
+	return nil
+}
+
+func LoadFile(path string) (data []byte, err error) {
+	defer errs.WrapWith1FuncParam(&err, path)
+
+	return nil, nil
+}
+
+func NoError() int {
+	return 42
+}
+`
+
+	inputFile := filepath.Join(tmpDir, "input.go")
+	err = os.WriteFile(inputFile, []byte(inputCode), 0644)
+	require.NoError(t, err)
+
+	// Run insert with validate=true
+	err = Insert(inputFile, "", false, true, true, nil)
+
+	// Should succeed with no errors
+	require.NoError(t, err)
+
+	// Verify file was not modified
+	content, readErr := os.ReadFile(inputFile)
+	require.NoError(t, readErr)
+	assert.Equal(t, inputCode, string(content))
+}
+
+func TestValidateIgnoresOutPath(t *testing.T) {
+	// Create a temporary directory for test files
+	tmpDir, err := os.MkdirTemp("", "go-errs-wrap-test-*")
+	require.NoError(t, err)
+	defer os.RemoveAll(tmpDir)
+
+	inputCode := `package test
+func F() (err error) { return nil }
+`
+
+	inputFile := filepath.Join(tmpDir, "input.go")
+	err = os.WriteFile(inputFile, []byte(inputCode), 0644)
+	require.NoError(t, err)
+
+	outDir := filepath.Join(tmpDir, "output")
+	err = os.MkdirAll(outDir, 0755)
+	require.NoError(t, err)
+
+	// Run remove with validate=true and outPath set (should ignore outPath and succeed - nothing to remove)
+	err = Remove(inputFile, outDir, false, true, nil)
+	require.NoError(t, err)
+
+	// Run replace with validate=true and outPath set (should ignore outPath and succeed - nothing to replace)
+	err = Replace(inputFile, outDir, false, false, true, nil)
+	require.NoError(t, err)
+
+	// Run insert with validate=true and outPath set (should ignore outPath but FAIL - missing wrapper)
+	err = Insert(inputFile, outDir, false, false, true, nil)
+	require.Error(t, err, "insert validation should fail when wrappers are missing")
+	assert.Contains(t, err.Error(), "missing error wrapper")
+
+	// Verify that outDir is still empty (nothing was written even though insert validation failed)
+	entries, err := os.ReadDir(outDir)
+	require.NoError(t, err)
+	assert.Empty(t, entries, "output directory should be empty when using -validate")
+}
+
+func TestRemoveValidateMode(t *testing.T) {
+	// Create a temporary directory for test files
+	tmpDir, err := os.MkdirTemp("", "go-errs-wrap-test-*")
+	require.NoError(t, err)
+	defer os.RemoveAll(tmpDir)
+
+	// Create test input file with defer errs.Wrap statements
+	inputCode := `package test
+
+import "github.com/domonda/go-errs"
+
+func ProcessData(ctx context.Context, id string) (err error) {
+	defer errs.WrapWith2FuncParams(&err, ctx, id)
+
+	return nil
+}
+
+func LoadFile(path string) (data []byte, err error) {
+	//#wrap-result-err
+
+	return nil, nil
+}
+`
+
+	inputFile := filepath.Join(tmpDir, "input.go")
+	err = os.WriteFile(inputFile, []byte(inputCode), 0644)
+	require.NoError(t, err)
+
+	// Run remove with validate=true
+	err = Remove(inputFile, "", false, true, nil)
+
+	// Should return an error indicating defer statements exist
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "missing error wrapper")
+
+	// Verify file was not modified
+	content, readErr := os.ReadFile(inputFile)
+	require.NoError(t, readErr)
+	assert.Equal(t, inputCode, string(content))
+}
+
+func TestRemoveValidateModeNoIssues(t *testing.T) {
+	// Create a temporary directory for test files
+	tmpDir, err := os.MkdirTemp("", "go-errs-wrap-test-*")
+	require.NoError(t, err)
+	defer os.RemoveAll(tmpDir)
+
+	// Create test input file without any defer errs.Wrap statements
+	inputCode := `package test
+
+func ProcessData(ctx context.Context, id string) (err error) {
+	return nil
+}
+
+func NoError() {
+	return
+}
+`
+
+	inputFile := filepath.Join(tmpDir, "input.go")
+	err = os.WriteFile(inputFile, []byte(inputCode), 0644)
+	require.NoError(t, err)
+
+	// Run remove with validate=true
+	err = Remove(inputFile, "", false, true, nil)
+
+	// Should succeed with no errors
+	require.NoError(t, err)
+
+	// Verify file was not modified
+	content, readErr := os.ReadFile(inputFile)
+	require.NoError(t, readErr)
+	assert.Equal(t, inputCode, string(content))
 }

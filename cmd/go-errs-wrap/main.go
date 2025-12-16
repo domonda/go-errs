@@ -20,8 +20,19 @@ functions that don't have them yet.
 # Options
 
 	-out <path>   Output to different location instead of modifying source
+	-validate     Dry run mode: check for issues without modifying files. Reports issues
+	              to stderr and exits with error code 1 if any are found. Useful for CI
+	              validation to ensure code quality standards are met.
+	              - remove: checks if any defer errs.Wrap statements exist
+	              - replace: checks if any defer errs.Wrap statements need updating
+	              - insert: checks if any functions are missing defer errs.Wrap
 	-verbose      Print progress information
 	-help         Show help message
+
+# Exit Codes
+
+	0   Success (no issues found in validate mode, or operation completed successfully)
+	1   Error occurred (validation failed, file not found, invalid arguments, etc.)
 
 # Examples
 
@@ -40,6 +51,18 @@ Insert wrap statements into functions missing them:
 Replace and output to a different location:
 
 	go-errs-wrap replace -out ./output ./pkg/mypackage
+
+Validate that no defer errs.Wrap statements exist (for CI):
+
+	go-errs-wrap remove -validate ./pkg/...
+
+Validate that all replacements are present (for CI):
+
+	go-errs-wrap replace -validate ./pkg/...
+
+Validate that all functions have error wrappers (for CI):
+
+	go-errs-wrap insert -validate ./pkg/...
 */
 package main
 
@@ -50,6 +73,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/domonda/go-errs"
 	"github.com/domonda/go-errs/cmd/go-errs-wrap/rewrite"
 )
 
@@ -57,6 +81,7 @@ var (
 	outPath     string
 	verbose     bool
 	minVariadic bool
+	validate    bool
 	printHelp   bool
 )
 
@@ -81,6 +106,7 @@ func main() {
 	fs.StringVar(&outPath, "out", "", "output to different location instead of modifying source")
 	fs.BoolVar(&verbose, "verbose", false, "print progress information")
 	fs.BoolVar(&minVariadic, "minvariadic", false, "minimize use of variadic WrapWithFuncParams")
+	fs.BoolVar(&validate, "validate", false, "check for issues without modifying files")
 	fs.BoolVar(&printHelp, "help", false, "show help message")
 	fs.Parse(os.Args[2:])
 
@@ -116,11 +142,11 @@ func main() {
 	var err error
 	switch command {
 	case "remove":
-		err = rewrite.Remove(sourcePath, outPath, recursive, verboseOut)
+		err = rewrite.Remove(sourcePath, outPath, recursive, validate, verboseOut)
 	case "replace":
-		err = rewrite.Replace(sourcePath, outPath, recursive, minVariadic, verboseOut)
+		err = rewrite.Replace(sourcePath, outPath, recursive, minVariadic, validate, verboseOut)
 	case "insert":
-		err = rewrite.Insert(sourcePath, outPath, recursive, minVariadic, verboseOut)
+		err = rewrite.Insert(sourcePath, outPath, recursive, minVariadic, validate, verboseOut)
 	default:
 		fmt.Fprintf(os.Stderr, "error: unknown command %q\n", command)
 		printUsage()
@@ -128,7 +154,7 @@ func main() {
 	}
 
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "error:", err)
+		fmt.Fprintln(os.Stderr, "error:", errs.UnwrapCallStack(err))
 		os.Exit(1)
 	}
 }
@@ -155,14 +181,28 @@ Options:
                   - If source is directory: create copy of directory structure
                   - If source is file: write to specified file path
                   - Non-Go files are copied unchanged
+  -validate       Dry run mode: check for issues without modifying files. Reports issues
+                  to stderr and exits with error code 1 if any are found. Useful for CI
+                  validation to ensure code quality standards are met.
+                  - remove: checks if any defer errs.Wrap statements exist
+                  - replace: checks if any defer errs.Wrap statements need updating
+                  - insert: checks if any functions are missing defer errs.Wrap
+                  Note: -out option is ignored when -validate is used.
   -minvariadic    Use specialized WrapWithNFuncParams functions instead of
                   preserving existing variadic WrapWithFuncParams calls
   -verbose        Print progress information
   -help           Show help message
 
+Exit Codes:
+  0   Success (no issues found in validate mode, or operation completed successfully)
+  1   Error occurred (validation failed, file not found, invalid arguments, etc.)
+
 Examples:
   go-errs-wrap remove ./pkg/...
   go-errs-wrap replace ./pkg/mypackage/file.go
   go-errs-wrap insert ./pkg/mypackage/file.go
-  go-errs-wrap replace -out ./output ./pkg/mypackage`)
+  go-errs-wrap replace -out ./output ./pkg/mypackage
+  go-errs-wrap remove -validate ./pkg/...
+  go-errs-wrap replace -validate ./pkg/...
+  go-errs-wrap insert -validate ./pkg/...`)
 }

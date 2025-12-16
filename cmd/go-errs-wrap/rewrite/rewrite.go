@@ -4,6 +4,7 @@
 package rewrite
 
 import (
+	"bytes"
 	"fmt"
 	"go/ast"
 	"go/token"
@@ -33,10 +34,13 @@ const (
 // If outPath is empty, files are modified in place.
 // If outPath is specified, results are written there instead.
 // If recursive is true, subdirectories are processed recursively.
-func Remove(sourcePath, outPath string, recursive bool, verboseOut io.Writer) (err error) {
-	defer errs.WrapWithFuncParams(&err, sourcePath, outPath, recursive, verboseOut)
+// If validate is true, no files are modified; instead, any defer errs.Wrap
+// statements or markers found are reported to stderr and the function returns
+// an error if any are found. When validate is true, outPath is ignored.
+func Remove(sourcePath, outPath string, recursive, validate bool, verboseOut io.Writer) (err error) {
+	defer errs.WrapWithFuncParams(&err, sourcePath, outPath, recursive, validate, verboseOut)
 
-	return process(sourcePath, outPath, recursive, false, verboseOut, modeRemove)
+	return process(sourcePath, outPath, recursive, false, validate, verboseOut, modeRemove)
 }
 
 // Replace replaces all defer errs.Wrap statements and //#wrap-result-err
@@ -48,10 +52,13 @@ func Remove(sourcePath, outPath string, recursive bool, verboseOut io.Writer) (e
 // If recursive is true, subdirectories are processed recursively.
 // If minVariadic is true, always use specialized WrapWithNFuncParams functions
 // instead of preserving existing variadic WrapWithFuncParams calls.
-func Replace(sourcePath, outPath string, recursive, minVariadic bool, verboseOut io.Writer) (err error) {
-	defer errs.WrapWithFuncParams(&err, sourcePath, outPath, recursive, minVariadic, verboseOut)
+// If validate is true, no files are modified; instead, missing replacements
+// are reported to stderr and the function returns an error if any are found.
+// When validate is true, outPath is ignored.
+func Replace(sourcePath, outPath string, recursive, minVariadic, validate bool, verboseOut io.Writer) (err error) {
+	defer errs.WrapWithFuncParams(&err, sourcePath, outPath, recursive, minVariadic, validate, verboseOut)
 
-	return process(sourcePath, outPath, recursive, minVariadic, verboseOut, modeReplace)
+	return process(sourcePath, outPath, recursive, minVariadic, validate, verboseOut, modeReplace)
 }
 
 // Insert inserts defer errs.WrapWith*FuncParams statements at the first line
@@ -62,14 +69,17 @@ func Replace(sourcePath, outPath string, recursive, minVariadic bool, verboseOut
 // If outPath is specified, results are written there instead.
 // If recursive is true, subdirectories are processed recursively.
 // If minVariadic is true, always use specialized WrapWithNFuncParams functions.
-func Insert(sourcePath, outPath string, recursive, minVariadic bool, verboseOut io.Writer) (err error) {
-	defer errs.WrapWithFuncParams(&err, sourcePath, outPath, recursive, minVariadic, verboseOut)
+// If validate is true, no files are modified; instead, missing insertions
+// are reported to stderr and the function returns an error if any are found.
+// When validate is true, outPath is ignored.
+func Insert(sourcePath, outPath string, recursive, minVariadic, validate bool, verboseOut io.Writer) (err error) {
+	defer errs.WrapWithFuncParams(&err, sourcePath, outPath, recursive, minVariadic, validate, verboseOut)
 
-	return process(sourcePath, outPath, recursive, minVariadic, verboseOut, modeInsert)
+	return process(sourcePath, outPath, recursive, minVariadic, validate, verboseOut, modeInsert)
 }
 
-func process(sourcePath, outPath string, recursive, minVariadic bool, verboseOut io.Writer, mode processMode) (err error) {
-	defer errs.WrapWithFuncParams(&err, sourcePath, outPath, recursive, minVariadic, verboseOut, mode)
+func process(sourcePath, outPath string, recursive, minVariadic, validate bool, verboseOut io.Writer, mode processMode) (err error) {
+	defer errs.WrapWithFuncParams(&err, sourcePath, outPath, recursive, minVariadic, validate, verboseOut, mode)
 
 	sourcePath, err = filepath.Abs(sourcePath)
 	if err != nil {
@@ -81,40 +91,107 @@ func process(sourcePath, outPath string, recursive, minVariadic bool, verboseOut
 		return err
 	}
 
-	// Handle output path for directory
-	if outPath != "" {
+	// Handle output path for directory when not in validate mode
+	if outPath != "" && !validate {
 		outPath, err = filepath.Abs(outPath)
 		if err != nil {
 			return err
 		}
 
 		if sourceInfo.IsDir() {
-			return processDirectoryWithOutput(sourcePath, outPath, recursive, minVariadic, verboseOut, mode)
+			return processDirectoryWithOutput(sourcePath, outPath, recursive, minVariadic, validate, verboseOut, mode)
 		}
 
 		// For single file with output, use custom handling
-		return processSingleFileWithOutput(sourcePath, outPath, minVariadic, verboseOut, mode)
+		return processSingleFileWithOutput(sourcePath, outPath, minVariadic, validate, verboseOut, mode)
 	}
 
-	// In-place modification
+	// In-place modification (or validation)
 	// Use "..." suffix for directories to recursively find all packages
 	path := sourcePath
 	if sourceInfo.IsDir() && recursive {
 		path = strings.TrimSuffix(sourcePath, "/") + "/..."
 	}
-	return astvisit.RewriteWithReplacements(
+
+	var validationErrors []string
+	err = astvisit.RewriteWithReplacements(
 		path,
 		verboseOut,
-		nil, // modify in place
+		nil, // modify in place (or skip in validation mode)
 		false,
 		func(fset *token.FileSet, _ *ast.Package, astFile *ast.File, filePath string, verboseOut io.Writer) (astvisit.NodeReplacements, astvisit.Imports, error) {
-			return processFile(fset, astFile, minVariadic, verboseOut, mode)
+			replacements, imports, err := processFile(fset, astFile, minVariadic, verboseOut, mode)
+			if err != nil {
+				return nil, nil, err
+			}
+
+			// In validation mode, check if replacements would actually change the file
+			if validate && len(replacements) > 0 {
+				// Read original source
+				source, err := os.ReadFile(filePath)
+				if err != nil {
+					return nil, nil, err
+				}
+
+				// Apply replacements to see if file would change
+				rewritten, err := replacements.Apply(fset, source)
+				if err != nil {
+					return nil, nil, err
+				}
+
+				// Apply the same formatting that would happen in normal mode
+				if mode == modeRemove {
+					rewritten, err = goimports.Process(filePath, rewritten, nil)
+					if err != nil {
+						return nil, nil, err
+					}
+				} else {
+					rewritten, err = astvisit.FormatFileWithImports(fset, rewritten, imports)
+					if err != nil {
+						return nil, nil, err
+					}
+				}
+
+				// Check if the content actually changed
+				if !bytes.Equal(source, rewritten) {
+					// File would change - report as validation error
+					for _, repl := range replacements {
+						var pos token.Position
+						if repl.Node != nil {
+							pos = fset.Position(repl.Node.Pos())
+						}
+						desc := repl.DebugID
+						if desc == "" {
+							desc = "error wrapper"
+						}
+						validationErrors = append(validationErrors, fmt.Sprintf("%s: missing %s", pos, desc))
+					}
+				}
+
+				// Return nil to prevent file modification in validate mode
+				return nil, nil, nil
+			}
+
+			return replacements, imports, nil
 		},
 	)
+	if err != nil {
+		return err
+	}
+
+	// In validation mode, report errors and fail if any were found
+	if validate && len(validationErrors) > 0 {
+		for _, errMsg := range validationErrors {
+			fmt.Fprintln(os.Stderr, errMsg)
+		}
+		return errs.Errorf("found %d missing error wrapper(s)", len(validationErrors))
+	}
+
+	return nil
 }
 
-func processSingleFileWithOutput(sourcePath, outPath string, minVariadic bool, verboseOut io.Writer, mode processMode) (err error) {
-	defer errs.WrapWithFuncParams(&err, sourcePath, outPath, minVariadic, verboseOut, mode)
+func processSingleFileWithOutput(sourcePath, outPath string, minVariadic, validate bool, verboseOut io.Writer, mode processMode) (err error) {
+	defer errs.WrapWithFuncParams(&err, sourcePath, outPath, minVariadic, validate, verboseOut, mode)
 
 	// Determine final output path
 	outInfo, err := os.Stat(outPath)
@@ -189,8 +266,8 @@ func processSingleFileWithOutput(sourcePath, outPath string, minVariadic bool, v
 	)
 }
 
-func processDirectoryWithOutput(sourcePath, outPath string, recursive, minVariadic bool, verboseOut io.Writer, mode processMode) (err error) {
-	defer errs.WrapWithFuncParams(&err, sourcePath, outPath, recursive, minVariadic, verboseOut, mode)
+func processDirectoryWithOutput(sourcePath, outPath string, recursive, minVariadic, validate bool, verboseOut io.Writer, mode processMode) (err error) {
+	defer errs.WrapWithFuncParams(&err, sourcePath, outPath, recursive, minVariadic, validate, verboseOut, mode)
 
 	// First, copy non-Go files
 	err = filepath.Walk(sourcePath, func(path string, info os.FileInfo, err error) error {
@@ -364,6 +441,7 @@ func processFile(fset *token.FileSet, astFile *ast.File, minVariadic bool, verbo
 			} else {
 				replacement = generateWrapStatement(fun)
 			}
+
 			if verboseOut != nil {
 				fmt.Fprintf(verboseOut, "%s: replacing defer errs.Wrap with %s\n", fset.Position(deferStmt.Pos()), replacement)
 			}
