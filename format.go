@@ -3,19 +3,16 @@ package errs
 import (
 	"errors"
 	"fmt"
-	"io"
 	"runtime"
 	"strings"
 
 	"github.com/domonda/go-pretty"
 )
 
-// CallStackPrintable can be implemented to customize the printing
-// of the implementation's data in an error call stack output.
+// FormatFunctionCall formats a function call with parameters using pretty.Printable.
 //
-// When an error is formatted with a call stack, any function parameters
-// that implement this interface will use PrintForCallStack instead of
-// the default pretty-printing.
+// Types can implement pretty.Printable from github.com/domonda/go-pretty to customize
+// their representation in error call stacks and other formatted output.
 //
 // Example:
 //
@@ -23,12 +20,12 @@ import (
 //	    value string
 //	}
 //
-//	func (s SensitiveData) PrintForCallStack(w io.Writer) {
-//	    w.Write([]byte("***REDACTED***"))
+//	func (s SensitiveData) PrettyPrint(w io.Writer) {
+//	    io.WriteString(w, "***REDACTED***")
 //	}
-type CallStackPrintable interface {
-	PrintForCallStack(io.Writer)
-}
+//
+// Since go-pretty already handles recursive checking of pretty.Printable implementations
+// in nested struct fields, types are properly formatted at any nesting level.
 
 // formatError formats an error with its call stack and function parameters.
 // It unwraps the error chain and builds a formatted string showing:
@@ -96,9 +93,8 @@ func formatCallStackParams(e callStackParamsProvider) string {
 }
 
 // FormatFunctionCall formats a function call in pseudo syntax
-// using the PrintForCallStack method of params that implement
-// the CallStackPrintable interface or github.com/domonda/go-pretty
-// to format params that don't implement CallStackPrintable.
+// using go-pretty to format parameters. Types that implement pretty.Printable
+// will use their PrettyPrint method, and this works recursively for nested structs.
 //
 // FormatFunctionCall is a function variable that can be changed
 // to globally configure the formatting of function calls.
@@ -110,11 +106,7 @@ var FormatFunctionCall = func(function string, params ...any) string {
 		if i > 0 {
 			b.WriteString(", ")
 		}
-		if printable, ok := param.(CallStackPrintable); ok {
-			printable.PrintForCallStack(&b)
-		} else {
-			pretty.Fprint(&b, param)
-		}
+		pretty.Fprint(&b, param)
 	}
 	b.WriteByte(')')
 	return b.String()

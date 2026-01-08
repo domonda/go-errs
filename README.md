@@ -191,22 +191,24 @@ func Login(username string, password string) (err error) {
 
 The `Secret` interface wraps a value and ensures it's never logged or printed:
 - `String()` returns `"***REDACTED***"`
-- Implements `CallStackPrintable` to ensure redaction in error call stacks
+- Implements `pretty.Printable` to ensure redaction in error call stacks and pretty-printed output
 - Use `secret.Secrect()` to retrieve the actual value when needed
 
 **Important:** Wrapping a parameter with `errs.KeepSecret()` is preferable to omitting it entirely from a `defer errs.WrapWith*` statement. When you run `go-errs-wrap replace`, omitted parameters will be added back, but `KeepSecret`-wrapped parameters are preserved in their wrapped form.
 
-#### Custom Types with CallStackPrintable
+#### Custom Types with pretty.Printable
 
-For custom types, implement `CallStackPrintable` to control how they appear in error messages:
+For custom types, implement `pretty.Printable` from `github.com/domonda/go-pretty` to control how they appear in error messages:
 
 ```go
+import "github.com/domonda/go-pretty"
+
 type Password struct {
     value string
 }
 
-func (p Password) PrintForCallStack(w io.Writer) {
-    w.Write([]byte("***REDACTED***"))
+func (p Password) PrettyPrint(w io.Writer) {
+    io.WriteString(w, "***REDACTED***")
 }
 
 func Login(username string, pwd Password) (err error) {
@@ -215,6 +217,9 @@ func Login(username string, pwd Password) (err error) {
     return authenticate(username, pwd)
 }
 ```
+
+The `go-pretty` library automatically handles recursive formatting, so types implementing `pretty.Printable`
+will be properly formatted even when nested in other structs.
 
 ## Unwrapping and Inspection
 

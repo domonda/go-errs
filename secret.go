@@ -38,8 +38,8 @@ func (s secret) GoString() string {
 	return fmt.Sprintf("%T(***REDACTED***)", s.val)
 }
 
-// PrintForCallStack implements CallStackPrintable
-// to ensure secrets are never revealed in error messages.
-func (secret) PrintForCallStack(w io.Writer) {
+// PrettyPrint implements the pretty.Printable interface
+// to ensure secrets are never revealed in pretty-printed output or error messages.
+func (secret) PrettyPrint(w io.Writer) {
 	io.WriteString(w, "***REDACTED***")
 }
