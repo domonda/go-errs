@@ -9,6 +9,26 @@ import (
 	"github.com/domonda/go-pretty"
 )
 
+// Printer is the pretty.Printer used to format function parameters
+// in error call stacks. It can be configured to customize formatting,
+// mask secrets, or adapt types that don't implement pretty.Printable.
+//
+// Example - Masking sensitive data:
+//
+//	func init() {
+//	    errs.Printer.AsPrintable = func(v reflect.Value) (pretty.Printable, bool) {
+//	        if v.Kind() == reflect.String && strings.Contains(v.String(), "secret") {
+//	            return printableAdapter{
+//	                format: func(w io.Writer) {
+//	                    fmt.Fprint(w, "`***REDACTED***`")
+//	                },
+//	            }, true
+//	        }
+//	        return nil, false
+//	    }
+//	}
+var Printer = &pretty.DefaultPrinter
+
 // FormatFunctionCall formats a function call with parameters using pretty.Printable.
 //
 // Types can implement pretty.Printable from github.com/domonda/go-pretty to customize
@@ -93,7 +113,7 @@ func formatCallStackParams(e callStackParamsProvider) string {
 }
 
 // FormatFunctionCall formats a function call in pseudo syntax
-// using go-pretty to format parameters. Types that implement pretty.Printable
+// using the Printer variable to format parameters. Types that implement pretty.Printable
 // will use their PrettyPrint method, and this works recursively for nested structs.
 //
 // FormatFunctionCall is a function variable that can be changed
@@ -106,7 +126,7 @@ var FormatFunctionCall = func(function string, params ...any) string {
 		if i > 0 {
 			b.WriteString(", ")
 		}
-		pretty.Fprint(&b, param)
+		Printer.Fprint(&b, param)
 	}
 	b.WriteByte(')')
 	return b.String()

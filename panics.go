@@ -4,8 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"runtime/debug"
-
-	"github.com/domonda/go-pretty"
 )
 
 // AsError converts any type to an error without wrapping it.
@@ -23,7 +21,7 @@ func AsError(val any) error {
 	case fmt.Stringer:
 		return errors.New(x.String())
 	default:
-		return errors.New(pretty.Sprint(val))
+		return errors.New(Printer.Sprint(val))
 	}
 }
 
