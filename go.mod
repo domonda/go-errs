@@ -3,7 +3,7 @@ module github.com/domonda/go-errs
 go 1.24.0
 
 require (
-	github.com/domonda/go-pretty v0.0.0-20260111174608-d6254099c393
+	github.com/domonda/go-pretty v0.0.0-20260111175803-8a597d4b2b88
 	github.com/stretchr/testify v1.11.1
 	github.com/ungerik/go-astvisit v0.0.0-20251017171216-b7bb0384dd33
 	golang.org/x/tools v0.40.0

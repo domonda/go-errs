@@ -3,6 +3,8 @@ package errs
 import (
 	"runtime"
 	"strings"
+
+	"github.com/domonda/go-pretty"
 )
 
 // Configuration variables
@@ -15,6 +17,26 @@ var (
 
 	// MaxCallStackFrames is the maximum number of frames to include in the call stack.
 	MaxCallStackFrames = 32
+
+	// Printer is the pretty.Printer used to format function parameters
+	// in error call stacks. It can be configured to customize formatting,
+	// mask secrets, or adapt types that don't implement pretty.Printable.
+	//
+	// Example - Masking sensitive data:
+	//
+	//	func init() {
+	//	    errs.Printer.AsPrintable = func(v reflect.Value) (pretty.Printable, bool) {
+	//	        if v.Kind() == reflect.String && strings.Contains(v.String(), "secret") {
+	//	            return printableAdapter{
+	//	                format: func(w io.Writer) {
+	//	                    fmt.Fprint(w, "`***REDACTED***`")
+	//	                },
+	//	            }, true
+	//	        }
+	//	        return pretty.AsPrintable(v) // Use default
+	//	    }
+	//	}
+	Printer = &pretty.DefaultPrinter
 )
 
 func filePathPrefix() string {
