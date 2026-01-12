@@ -10,7 +10,7 @@ func TestNew(t *testing.T) {
 		t.Fatal()
 	}
 
-	// Check against panic that happend when using error implementing
+	// Check against panic that happened when using error implementing
 	// type withCallStack instead of *withCallStack:
 	// comparing uncomparable type errs.withCallStack
 	wrappedError := Errorf("wrapped: %w", errWrapper{Wrapped: errStruct{"a"}})
