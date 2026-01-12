@@ -6,6 +6,8 @@ github.com/domonda/go-pretty v0.0.0-20260111174608-d6254099c393 h1:3bzyQ21N4Neo/
 github.com/domonda/go-pretty v0.0.0-20260111174608-d6254099c393/go.mod h1:O05JaeEezfZ2ian+t10+JrAZFKadSIsqWdukNtOPEzI=
 github.com/domonda/go-pretty v0.0.0-20260111175803-8a597d4b2b88 h1:lPOL8LcYS1YgkyIYoQ+CjayUAId0CBea3atOGdZt7BQ=
 github.com/domonda/go-pretty v0.0.0-20260111175803-8a597d4b2b88/go.mod h1:O05JaeEezfZ2ian+t10+JrAZFKadSIsqWdukNtOPEzI=
+github.com/domonda/go-pretty v0.0.0-20260112082908-96fe37692898 h1:2rewcM60RPEmkBHDmgceBvgA9s1N+ArKzMKMBMu2X7s=
+github.com/domonda/go-pretty v0.0.0-20260112082908-96fe37692898/go.mod h1:O05JaeEezfZ2ian+t10+JrAZFKadSIsqWdukNtOPEzI=
 github.com/google/go-cmp v0.6.0 h1:ofyhxvXcZhMsU5ulbFiLKl/XBFqE1GSq7atu8tAmTRI=
 github.com/google/go-cmp v0.6.0/go.mod h1:17dUlkBOakJ0+DkrSSNjCkIjxS6bF9zb3elmeNGIjoY=
 github.com/pmezard/go-difflib v1.0.0 h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZbAQM=

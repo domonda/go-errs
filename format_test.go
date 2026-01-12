@@ -1,11 +1,16 @@
 package errs
 
 import (
+	"fmt"
 	"io"
+	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/domonda/go-pretty"
 )
 
 // Test types that implement pretty.Printable
@@ -310,4 +315,267 @@ func TestFormatFunctionCall_TopLevelSecret(t *testing.T) {
 	assert.Contains(t, result, "`username`")
 	assert.Contains(t, result, "***REDACTED***")
 	assert.NotContains(t, result, "top-level-secret")
+}
+
+// Test PrintFuncFor customization
+
+type ThirdPartyAPIKey string
+
+type CustomStringer struct {
+	Name string
+}
+
+func (c CustomStringer) String() string {
+	return "CustomStringer[" + c.Name + "]"
+}
+
+type SensitiveData struct {
+	PublicID  string
+	SecretKey string
+}
+
+func TestPrintFuncFor_MaskSensitiveStrings(t *testing.T) {
+	// Save original printer
+	originalPrinter := Printer
+	defer func() { Printer = originalPrinter }()
+
+	// Configure printer to mask strings containing sensitive keywords
+	Printer = Printer.WithPrintFuncFor(func(v reflect.Value) pretty.PrintFunc {
+		if v.Kind() == reflect.String {
+			str := v.String()
+			if strings.Contains(strings.ToLower(str), "password") ||
+				strings.Contains(strings.ToLower(str), "token") ||
+				strings.Contains(strings.ToLower(str), "apikey") {
+				return func(w io.Writer) {
+					io.WriteString(w, "`***REDACTED***`")
+				}
+			}
+		}
+		return pretty.PrintFuncForPrintable(v)
+	})
+
+	result := FormatFunctionCall("testFunc", "my-password-123", "safe-string", "Bearer-token-xyz")
+
+	assert.Contains(t, result, "testFunc(")
+	assert.Contains(t, result, "`***REDACTED***`") // password should be masked
+	assert.Contains(t, result, "`safe-string`")    // safe string should appear
+	// Second redacted for token
+	occurrences := strings.Count(result, "`***REDACTED***`")
+	assert.Equal(t, 2, occurrences, "Should have 2 redacted strings")
+	assert.NotContains(t, result, "my-password-123")
+	assert.NotContains(t, result, "Bearer-token-xyz")
+}
+
+func TestPrintFuncFor_CustomTypeRedaction(t *testing.T) {
+	// Save original printer
+	originalPrinter := Printer
+	defer func() { Printer = originalPrinter }()
+
+	// Configure printer to mask ThirdPartyAPIKey type
+	Printer = Printer.WithPrintFuncFor(func(v reflect.Value) pretty.PrintFunc {
+		if v.Type().String() == "errs.ThirdPartyAPIKey" {
+			return func(w io.Writer) {
+				io.WriteString(w, "***REDACTED_API_KEY***")
+			}
+		}
+		return pretty.PrintFuncForPrintable(v)
+	})
+
+	apiKey := ThirdPartyAPIKey("sk-1234567890abcdef")
+	result := FormatFunctionCall("testFunc", "user-123", apiKey)
+
+	assert.Contains(t, result, "testFunc(")
+	assert.Contains(t, result, "`user-123`")
+	assert.Contains(t, result, "***REDACTED_API_KEY***")
+	assert.NotContains(t, result, "sk-1234567890abcdef")
+}
+
+func TestPrintFuncFor_AdaptFmtStringer(t *testing.T) {
+	// Save original printer
+	originalPrinter := Printer
+	defer func() { Printer = originalPrinter }()
+
+	// Configure printer to use String() method from fmt.Stringer types
+	Printer = Printer.WithPrintFuncFor(func(v reflect.Value) pretty.PrintFunc {
+		stringer, ok := v.Interface().(fmt.Stringer)
+		if !ok && v.CanAddr() {
+			stringer, ok = v.Addr().Interface().(fmt.Stringer)
+		}
+		if ok {
+			return func(w io.Writer) {
+				io.WriteString(w, stringer.String())
+			}
+		}
+		return pretty.PrintFuncForPrintable(v)
+	})
+
+	custom := CustomStringer{Name: "test"}
+	result := FormatFunctionCall("testFunc", custom, "other")
+
+	assert.Contains(t, result, "testFunc(")
+	assert.Contains(t, result, "CustomStringer[test]")
+	assert.Contains(t, result, "`other`")
+}
+
+func TestPrintFuncFor_StructFieldMasking(t *testing.T) {
+	// Save original printer
+	originalPrinter := Printer
+	defer func() { Printer = originalPrinter }()
+
+	// Configure printer to mask struct fields containing "secret" in name
+	Printer = Printer.WithPrintFuncFor(func(v reflect.Value) pretty.PrintFunc {
+		if v.Kind() == reflect.Struct {
+			t := v.Type()
+			hasSecretField := false
+			for i := 0; i < t.NumField(); i++ {
+				field := t.Field(i)
+				if strings.Contains(strings.ToLower(field.Name), "secret") {
+					hasSecretField = true
+					break
+				}
+			}
+			if hasSecretField {
+				return func(w io.Writer) {
+					io.WriteString(w, t.Name())
+					io.WriteString(w, "{***FIELDS_REDACTED***}")
+				}
+			}
+		}
+		return pretty.PrintFuncForPrintable(v)
+	})
+
+	sensitive := SensitiveData{
+		PublicID:  "public-123",
+		SecretKey: "should-not-appear",
+	}
+	result := FormatFunctionCall("testFunc", sensitive)
+
+	assert.Contains(t, result, "testFunc(")
+	assert.Contains(t, result, "SensitiveData{***FIELDS_REDACTED***}")
+	assert.NotContains(t, result, "public-123")
+	assert.NotContains(t, result, "should-not-appear")
+}
+
+func TestPrintFuncFor_PreservesPrintableInterface(t *testing.T) {
+	// Save original printer
+	originalPrinter := Printer
+	defer func() { Printer = originalPrinter }()
+
+	// Configure printer with custom logic that falls back to Printable
+	Printer = Printer.WithPrintFuncFor(func(v reflect.Value) pretty.PrintFunc {
+		// Custom logic that doesn't match our types
+		if v.Kind() == reflect.String && v.String() == "special" {
+			return func(w io.Writer) {
+				io.WriteString(w, "`SPECIAL`")
+			}
+		}
+		// Fall back to default Printable interface handling
+		return pretty.PrintFuncForPrintable(v)
+	})
+
+	simple := &SimplePrintable{Value: "test"}
+	result := FormatFunctionCall("testFunc", simple, "special", "normal")
+
+	assert.Contains(t, result, "testFunc(")
+	// SimplePrintable should still use its PrettyPrint method
+	assert.Contains(t, result, "Simple{test}")
+	// "special" string should use custom logic
+	assert.Contains(t, result, "`SPECIAL`")
+	// "normal" string should use default formatting
+	assert.Contains(t, result, "`normal`")
+}
+
+func TestPrintFuncFor_WithWrapWithFuncParams(t *testing.T) {
+	// Save original printer
+	originalPrinter := Printer
+	defer func() { Printer = originalPrinter }()
+
+	// Configure printer to mask sensitive data
+	Printer = Printer.WithPrintFuncFor(func(v reflect.Value) pretty.PrintFunc {
+		if v.Kind() == reflect.String {
+			str := v.String()
+			if strings.Contains(str, "secret-") {
+				return func(w io.Writer) {
+					io.WriteString(w, "`***REDACTED***`")
+				}
+			}
+		}
+		return pretty.PrintFuncForPrintable(v)
+	})
+
+	testFunc := func(userID string, apiKey string) (err error) {
+		defer WrapWithFuncParams(&err, userID, apiKey)
+		return New("operation failed")
+	}
+
+	err := testFunc("user-123", "secret-api-key-xyz")
+	require.Error(t, err)
+
+	errStr := err.Error()
+	assert.Contains(t, errStr, "operation failed")
+	assert.Contains(t, errStr, "`user-123`")
+	assert.Contains(t, errStr, "`***REDACTED***`")
+	assert.NotContains(t, errStr, "secret-api-key-xyz")
+}
+
+func TestPrintFuncFor_NestedStructsWithCustomFormatting(t *testing.T) {
+	// Save original printer
+	originalPrinter := Printer
+	defer func() { Printer = originalPrinter }()
+
+	type NestedSensitive struct {
+		Data SensitiveData
+		Name string
+	}
+
+	// Configure printer to mask SensitiveData type
+	Printer = Printer.WithPrintFuncFor(func(v reflect.Value) pretty.PrintFunc {
+		if v.Type().String() == "errs.SensitiveData" {
+			return func(w io.Writer) {
+				io.WriteString(w, "SensitiveData{***MASKED***}")
+			}
+		}
+		return pretty.PrintFuncForPrintable(v)
+	})
+
+	nested := NestedSensitive{
+		Data: SensitiveData{
+			PublicID:  "public",
+			SecretKey: "secret",
+		},
+		Name: "container",
+	}
+
+	result := FormatFunctionCall("testFunc", nested)
+
+	assert.Contains(t, result, "testFunc(")
+	assert.Contains(t, result, "NestedSensitive{")
+	assert.Contains(t, result, "Data:SensitiveData{***MASKED***}")
+	assert.Contains(t, result, "Name:`container`")
+	assert.NotContains(t, result, "public")
+	assert.NotContains(t, result, "secret")
+}
+
+func TestPrintFuncFor_NilReturnUsesDefault(t *testing.T) {
+	// Save original printer
+	originalPrinter := Printer
+	defer func() { Printer = originalPrinter }()
+
+	// Configure printer that returns nil for non-matching cases
+	Printer = Printer.WithPrintFuncFor(func(v reflect.Value) pretty.PrintFunc {
+		if v.Kind() == reflect.String && v.String() == "intercept" {
+			return func(w io.Writer) {
+				io.WriteString(w, "`INTERCEPTED`")
+			}
+		}
+		// Return nil to use default behavior
+		return nil
+	})
+
+	result := FormatFunctionCall("testFunc", "intercept", "normal", 42)
+
+	assert.Contains(t, result, "testFunc(")
+	assert.Contains(t, result, "`INTERCEPTED`")
+	assert.Contains(t, result, "`normal`")
+	assert.Contains(t, result, "42")
 }

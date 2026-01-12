@@ -221,6 +221,131 @@ func Login(username string, pwd Password) (err error) {
 The `go-pretty` library automatically handles recursive formatting, so types implementing `pretty.Printable`
 will be properly formatted even when nested in other structs.
 
+#### Customizing Call Stack Printing with PrintFuncFor
+
+**Default behavior:** By default, the `Printer` checks if a type implements the `pretty.Printable` interface. If it does, the `PrettyPrint(io.Writer)` method is called to format the value. This is the recommended approach for types you own and control.
+
+For advanced use cases where you need to customize formatting beyond implementing `pretty.Printable`, use `Printer.WithPrintFuncFor()`. This is useful when:
+- You want to format types you don't control (third-party types, stdlib types)
+- You need runtime-conditional formatting based on values or context
+- You want to adapt types that implement other interfaces (e.g., `fmt.Stringer`)
+- You need to apply global formatting rules based on struct tags or type patterns
+- You want to override or wrap the default `Printable` behavior
+
+```go
+import (
+    "fmt"
+    "io"
+    "reflect"
+    "strings"
+    "github.com/domonda/go-errs"
+    "github.com/domonda/go-pretty"
+)
+
+func init() {
+    // Create a custom printer with PrintFuncFor hook
+    errs.Printer = errs.Printer.WithPrintFuncFor(func(v reflect.Value) pretty.PrintFunc {
+        // Example 1: Mask strings containing sensitive keywords
+        if v.Kind() == reflect.String {
+            str := v.String()
+            if strings.Contains(strings.ToLower(str), "password") ||
+               strings.Contains(strings.ToLower(str), "token") ||
+               strings.Contains(strings.ToLower(str), "apikey") {
+                return func(w io.Writer) {
+                    io.WriteString(w, "`***REDACTED***`")
+                }
+            }
+        }
+
+        // Example 2: Hide struct fields tagged with `secret:"true"`
+        if v.Kind() == reflect.Struct {
+            t := v.Type()
+            for i := 0; i < t.NumField(); i++ {
+                field := t.Field(i)
+                if field.Tag.Get("secret") == "true" {
+                    // Create a custom formatter that masks tagged fields
+                    return func(w io.Writer) {
+                        // Custom struct formatting logic here
+                        io.WriteString(w, t.Name())
+                        io.WriteString(w, "{***FIELDS_REDACTED***}")
+                    }
+                }
+            }
+        }
+
+        // Example 3: Adapt types implementing fmt.Stringer
+        stringer, ok := v.Interface().(fmt.Stringer)
+        if !ok && v.CanAddr() {
+            stringer, ok = v.Addr().Interface().(fmt.Stringer)
+        }
+        if ok {
+            return func(w io.Writer) {
+                io.WriteString(w, stringer.String())
+            }
+        }
+
+        // Fall back to default Printable interface handling
+        return pretty.PrintFuncForPrintable(v)
+    })
+}
+
+// Now all error call stacks will use your custom formatting
+func ProcessPayment(amount int, cardNumber string) (err error) {
+    defer errs.WrapWithFuncParams(&err, amount, cardNumber)
+    // If cardNumber contains "4111-1111-1111-1111", it will be shown as:
+    // ProcessPayment(1000, `***REDACTED***`)
+    return chargeCard(amount, cardNumber)
+}
+```
+
+**Key points:**
+- **Default behavior**: If no `PrintFuncFor` is set, the `Printer` automatically checks if types implement `pretty.Printable` and calls their `PrettyPrint()` method
+- `WithPrintFuncFor()` returns a new `Printer` with the custom hook installed
+- The hook receives a `reflect.Value` and returns a `pretty.PrintFunc` (or `nil` to use default)
+- **Important**: In a PrintFuncFor function, always return `pretty.PrintFuncForPrintable(v)` as the fallback to preserve the default `Printable` interface checking behavior if you want to honor the `Printable` interface.
+- The hook applies to all values printed in error call stacks, including nested struct fields
+- This approach allows centralized control over sensitive data redaction without modifying type definitions
+- `PrintFuncFor` is evaluated for every value, allowing you to intercept and customize formatting before the `Printable` interface is checked
+
+**Comparison: Printable vs PrintFuncFor**
+
+```go
+// Approach 1: Implement pretty.Printable (recommended for types you own)
+type APIKey string
+
+func (k APIKey) PrettyPrint(w io.Writer) {
+    io.WriteString(w, "***REDACTED***")
+}
+
+// Approach 2: Use PrintFuncFor (for types you don't control or global rules)
+func init() {
+    errs.Printer = errs.Printer.WithPrintFuncFor(func(v reflect.Value) pretty.PrintFunc {
+        // Check for APIKey type from a third-party package
+        if v.Type().String() == "thirdparty.APIKey" {
+            return func(w io.Writer) {
+                io.WriteString(w, "***REDACTED***")
+            }
+        }
+        // Fall back to checking for Printable interface
+        return pretty.PrintFuncForPrintable(v)
+    })
+}
+```
+
+**Example with struct tags:**
+
+```go
+type User struct {
+    ID       string
+    Email    string
+    Password string `secret:"true"`
+    APIKey   string `secret:"true"`
+}
+
+// With the PrintFuncFor hook configured above,
+// error messages will automatically redact fields tagged with secret:"true"
+```
+
 ## Unwrapping and Inspection
 
 ### Finding Errors by Type
