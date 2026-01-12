@@ -108,7 +108,7 @@ func main() {
 	fs.BoolVar(&minVariadic, "minvariadic", false, "minimize use of variadic WrapWithFuncParams")
 	fs.BoolVar(&validate, "validate", false, "check for issues without modifying files")
 	fs.BoolVar(&printHelp, "help", false, "show help message")
-	fs.Parse(os.Args[2:])
+	fs.Parse(os.Args[2:]) // #nosec G104 -- using ExitOnError mode, Parse will exit on error
 
 	if printHelp {
 		printUsage()

@@ -41,5 +41,5 @@ func (s secret) GoString() string {
 // PrettyPrint implements the pretty.Printable interface
 // to ensure secrets are never revealed in pretty-printed output or error messages.
 func (secret) PrettyPrint(w io.Writer) {
-	io.WriteString(w, "***REDACTED***")
+	io.WriteString(w, "***REDACTED***") // #nosec G104 -- intentionally ignoring error for simple string write
 }
