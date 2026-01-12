@@ -1,6 +1,6 @@
 # go-errs
 
-Go 1.13+ compatible error wrapping with call stacks and function parameters.
+Go error wrapping with call-stack and function parameter capture.
 
 [![Go Reference](https://pkg.go.dev/badge/github.com/domonda/go-errs.svg)](https://pkg.go.dev/github.com/domonda/go-errs)
 [![Go Report Card](https://goreportcard.com/badge/github.com/domonda/go-errs)](https://goreportcard.com/report/github.com/domonda/go-errs)
@@ -9,8 +9,7 @@ Go 1.13+ compatible error wrapping with call stacks and function parameters.
 
 - **Automatic call stack capture** - Every error wrapped with this package includes the full call stack at the point where the error was created or wrapped
 - **Function parameter tracking** - Capture and display function parameters in error messages for detailed debugging
-- **Go 1.13+ error wrapping compatible** - Works seamlessly with `errors.Is`, `errors.As`, and `errors.Unwrap`
-- **Zero allocation optimization** - Specialized functions for 0-10 parameters to avoid varargs allocations
+- **Error wrapping compatible** - Works seamlessly with `errors.Is`, `errors.As`, and `errors.Unwrap`
 - **Helper utilities** - Common patterns for NotFound errors, context errors, and panic recovery
 - **Customizable formatting** - Control how sensitive data appears in error messages
 - **Go 1.23+ iterator support** - Convert errors to iterators for functional programming patterns
