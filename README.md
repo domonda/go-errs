@@ -410,7 +410,7 @@ errs.MaxCallStackFrames = 64 // Default is 32
 Control how long parameter values can be in error messages to prevent huge values from making errors unreadable:
 
 ```go
-// Default is 10000 bytes
+// Default is 5000 bytes
 errs.FormatParamMaxLen = 500
 
 // Now long parameter values will be truncated

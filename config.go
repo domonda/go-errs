@@ -46,7 +46,7 @@ var (
 	// This prevents extremely large values (like long strings, big JSON blobs,
 	// or large data structures) from making error messages unreadable.
 	//
-	// Default: 10000 bytes
+	// Default: 5000 bytes
 	//
 	// Example:
 	//
@@ -58,7 +58,7 @@ var (
 	//	    // ProcessData("first 100 bytes of data…(TRUNCATED)")
 	//	    return validateData(data)
 	//	}
-	FormatParamMaxLen = 10000
+	FormatParamMaxLen = 5000
 )
 
 func filePathPrefix() string {
