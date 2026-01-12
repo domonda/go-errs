@@ -909,8 +909,8 @@ func ProcessWithSecret(ctx any, password string) (err error) {
 
 func TestGenerateWrapStatementWithKeepSecret(t *testing.T) {
 	tests := []struct {
-		name            string
-		funcInfo        *funcInfo
+		name             string
+		funcInfo         *funcInfo
 		expectedVariadic string
 		expectedSpecial  string
 	}{
