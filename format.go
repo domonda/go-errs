@@ -1,6 +1,7 @@
 package errs
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"runtime"
@@ -96,6 +97,17 @@ func formatCallStackParams(e callStackParamsProvider) string {
 //
 // FormatFunctionCall is a function variable that can be changed
 // to globally configure the formatting of function calls.
+//
+// Default Implementation:
+//
+// The default implementation formats function calls as:
+//
+//	functionName(param1, param2, ...)
+//
+// Each parameter is formatted using the Printer variable, which respects
+// types implementing pretty.Printable. If a formatted parameter exceeds
+// FormatParamMaxLen bytes, it will be truncated to ensure valid UTF-8
+// and suffixed with "…(TRUNCATED)".
 var FormatFunctionCall = func(function string, params ...any) string {
 	var b strings.Builder
 	b.WriteString(function)
@@ -104,7 +116,16 @@ var FormatFunctionCall = func(function string, params ...any) string {
 		if i > 0 {
 			b.WriteString(", ")
 		}
-		Printer.Fprint(&b, param)
+		var paramBuf bytes.Buffer
+		Printer.Fprint(&paramBuf, param)
+		if paramBuf.Len() > FormatParamMaxLen {
+			bStr := paramBuf.Bytes()[:FormatParamMaxLen]
+			// Cut off slice may end with invalid UTF-8 sequence
+			b.Write(bytes.ToValidUTF8(bStr, nil))
+			b.WriteString("…(TRUNCATED)")
+		} else {
+			b.Write(paramBuf.Bytes())
+		}
 	}
 	b.WriteByte(')')
 	return b.String()

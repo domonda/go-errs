@@ -579,3 +579,158 @@ func TestPrintFuncFor_NilReturnUsesDefault(t *testing.T) {
 	assert.Contains(t, result, "`normal`")
 	assert.Contains(t, result, "42")
 }
+
+func TestFormatParamMaxLen_ShortParameter(t *testing.T) {
+	// Save original value and restore after test
+	originalMaxLen := FormatParamMaxLen
+	defer func() { FormatParamMaxLen = originalMaxLen }()
+
+	FormatParamMaxLen = 100
+	shortString := "This is a short string"
+
+	result := FormatFunctionCall("testFunc", shortString)
+
+	assert.Contains(t, result, "testFunc(")
+	assert.Contains(t, result, shortString)
+	assert.NotContains(t, result, "TRUNCATED")
+}
+
+func TestFormatParamMaxLen_LongParameterTruncated(t *testing.T) {
+	// Save original value and restore after test
+	originalMaxLen := FormatParamMaxLen
+	defer func() { FormatParamMaxLen = originalMaxLen }()
+
+	FormatParamMaxLen = 50
+	longString := strings.Repeat("abcdefghij", 20) // 200 characters
+
+	result := FormatFunctionCall("testFunc", longString)
+
+	assert.Contains(t, result, "testFunc(")
+	assert.Contains(t, result, "…(TRUNCATED)")
+	// Result should be shorter than the original string
+	assert.Less(t, len(result), len(longString)+50)
+	// Should contain the beginning of the string
+	assert.Contains(t, result, "abcdefghij")
+}
+
+func TestFormatParamMaxLen_ExactlyAtLimit(t *testing.T) {
+	// Save original value and restore after test
+	originalMaxLen := FormatParamMaxLen
+	defer func() { FormatParamMaxLen = originalMaxLen }()
+
+	FormatParamMaxLen = 50
+	// Create string that will be exactly at the limit when formatted (with backticks)
+	exactString := strings.Repeat("x", 48) // 48 + 2 backticks = 50
+
+	result := FormatFunctionCall("testFunc", exactString)
+
+	assert.Contains(t, result, "testFunc(")
+	assert.Contains(t, result, exactString)
+	assert.NotContains(t, result, "TRUNCATED")
+}
+
+func TestFormatParamMaxLen_UTF8Safety(t *testing.T) {
+	// Save original value and restore after test
+	originalMaxLen := FormatParamMaxLen
+	defer func() { FormatParamMaxLen = originalMaxLen }()
+
+	FormatParamMaxLen = 20
+	// String with multi-byte UTF-8 characters (emoji are 4 bytes each)
+	utf8String := "Hello 世界 🌍🌎🌏" // Mix of ASCII, Chinese, and emoji
+
+	result := FormatFunctionCall("testFunc", utf8String)
+
+	assert.Contains(t, result, "testFunc(")
+	assert.Contains(t, result, "…(TRUNCATED)")
+	// Result should be valid UTF-8 (no panic when converting to string)
+	assert.NotPanics(t, func() {
+		_ = string([]byte(result))
+	})
+	// Should contain at least some of the beginning
+	assert.Contains(t, result, "Hello")
+}
+
+func TestFormatParamMaxLen_MultipleParameters(t *testing.T) {
+	// Save original value and restore after test
+	originalMaxLen := FormatParamMaxLen
+	defer func() { FormatParamMaxLen = originalMaxLen }()
+
+	FormatParamMaxLen = 30
+	shortString := "short"
+	longString := strings.Repeat("verylongtext", 10) // 120 characters
+
+	result := FormatFunctionCall("testFunc", shortString, longString, 42)
+
+	assert.Contains(t, result, "testFunc(")
+	// Short string should not be truncated
+	assert.Contains(t, result, shortString)
+	// Long string should be truncated
+	assert.Contains(t, result, "…(TRUNCATED)")
+	// Number should be present
+	assert.Contains(t, result, "42")
+	// Should have proper comma separation
+	assert.Contains(t, result, ", ")
+}
+
+func TestFormatParamMaxLen_LargeStruct(t *testing.T) {
+	// Save original value and restore after test
+	originalMaxLen := FormatParamMaxLen
+	defer func() { FormatParamMaxLen = originalMaxLen }()
+
+	FormatParamMaxLen = 50
+
+	type LargeStruct struct {
+		Field1 string
+		Field2 string
+		Field3 string
+		Field4 string
+		Field5 string
+	}
+
+	largeData := LargeStruct{
+		Field1: "This is a very long field value that will make the struct large",
+		Field2: "Another very long field value with lots of text",
+		Field3: "Yet another long field value",
+		Field4: "More data here",
+		Field5: "Even more data",
+	}
+
+	result := FormatFunctionCall("testFunc", largeData)
+
+	assert.Contains(t, result, "testFunc(")
+	assert.Contains(t, result, "…(TRUNCATED)")
+	assert.Contains(t, result, "LargeStruct")
+}
+
+func TestFormatParamMaxLen_ZeroValue(t *testing.T) {
+	// Save original value and restore after test
+	originalMaxLen := FormatParamMaxLen
+	defer func() { FormatParamMaxLen = originalMaxLen }()
+
+	// Setting to 0 should effectively truncate everything to empty
+	FormatParamMaxLen = 0
+	testString := "any string"
+
+	result := FormatFunctionCall("testFunc", testString)
+
+	assert.Contains(t, result, "testFunc(")
+	assert.Contains(t, result, "…(TRUNCATED)")
+	// Result should be very short (just the function name and truncation marker)
+	assert.Less(t, len(result), 30)
+}
+
+func TestFormatParamMaxLen_VeryLargeLimit(t *testing.T) {
+	// Save original value and restore after test
+	originalMaxLen := FormatParamMaxLen
+	defer func() { FormatParamMaxLen = originalMaxLen }()
+
+	FormatParamMaxLen = 1000000 // 1MB limit
+	// Use a shorter string that won't trigger go-pretty's internal limit
+	moderateString := strings.Repeat("test", 20) // 80 characters
+
+	result := FormatFunctionCall("testFunc", moderateString)
+
+	assert.Contains(t, result, "testFunc(")
+	assert.Contains(t, result, moderateString)
+	assert.NotContains(t, result, "TRUNCATED")
+}

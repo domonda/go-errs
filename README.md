@@ -405,6 +405,29 @@ errs.TrimFilePathPrefix = "/go/src/"
 errs.MaxCallStackFrames = 64 // Default is 32
 ```
 
+### Limit Parameter Value Length
+
+Control how long parameter values can be in error messages to prevent huge values from making errors unreadable:
+
+```go
+// Default is 10000 bytes
+errs.FormatParamMaxLen = 500
+
+// Now long parameter values will be truncated
+func ProcessDocument(content string) (err error) {
+    defer errs.WrapWithFuncParams(&err, content)
+    // If content is 2KB, error will show:
+    // ProcessDocument("first 500 bytes…(TRUNCATED)")
+    return parseDocument(content)
+}
+```
+
+This is particularly useful when dealing with:
+- Large JSON or XML payloads
+- Binary data encoded as strings
+- Long database query results
+- Large data structures
+
 ### Customize Function Call Formatting
 
 ```go
