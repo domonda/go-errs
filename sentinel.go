@@ -4,7 +4,8 @@ package errs
 // and is meant to be used to declare const sentinel errors.
 //
 // Example:
-//   const ErrUserNotFound errs.Sentinel = "user not found"
+//
+//	const ErrUserNotFound errs.Sentinel = "user not found"
 type Sentinel string
 
 func (s Sentinel) Error() string {

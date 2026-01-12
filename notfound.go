@@ -18,7 +18,9 @@ import (
 //
 // Else create custom "not found" error by wrapping ErrNotFound
 // or implementing a custom error type with an
-//   Is(target error) bool
+//
+//	Is(target error) bool
+//
 // method that returns true for target == ErrNotFound.
 //
 // For checking errors it is recommended to use IsErrNotFound(err)
