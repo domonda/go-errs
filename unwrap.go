@@ -30,34 +30,46 @@ func Has[T error](err error) bool {
 //
 //	Unwrap() error
 //	Unwrap() []error
+//
+// An error err matches the type T if the type assertion err.(T) holds,
+// or if the error has a method As(any) bool such that err.As(target)
+// returns true when target is a non-nil *T. In the latter case, the As
+// method is responsible for setting target.
 func As[T error](err error) []T {
 	if err == nil {
 		return nil
 	}
 	var errs []T
-	targetType := reflect.TypeOf((*T)(nil)).Elem()
+	as(err, &errs)
+	return errs
+}
+
+func as[T error](err error, errs *[]T) {
 	for {
-		var target T
-		if reflect.TypeOf(err).AssignableTo(targetType) {
-			reflect.ValueOf(&target).Elem().Set(reflect.ValueOf(err))
-			errs = append(errs, target)
-		}
-		if x, ok := err.(interface{ As(any) bool }); ok && x.As(&target) {
-			errs = append(errs, target)
+		if e, ok := err.(T); ok {
+			*errs = append(*errs, e)
+		} else if x, ok := err.(interface{ As(any) bool }); ok {
+			var target T
+			if x.As(&target) {
+				*errs = append(*errs, target)
+			}
 		}
 		switch x := err.(type) {
 		case interface{ Unwrap() error }:
 			err = x.Unwrap()
 			if err == nil {
-				return errs
+				return
 			}
 		case interface{ Unwrap() []error }:
 			for _, err := range x.Unwrap() {
-				errs = append(errs, As[T](err)...)
+				if err == nil {
+					continue
+				}
+				as(err, errs)
 			}
-			return errs
+			return
 		default:
-			return errs
+			return
 		}
 	}
 }
