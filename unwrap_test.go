@@ -308,9 +308,9 @@ func TestRoot_WithErrorsJoin(t *testing.T) {
 
 		err := errors.Join(e0, e1)
 
-		// Root doesn't unwrap errors.Join since it doesn't implement single Unwrap()
+		// Root traverses into the join and returns the root of the first branch
 		result := Root(err)
-		assert.Equal(t, err, result)
+		assert.Equal(t, e0, result)
 	})
 
 	t.Run("root through wrapped join", func(t *testing.T) {
@@ -320,8 +320,56 @@ func TestRoot_WithErrorsJoin(t *testing.T) {
 		joined := errors.Join(e0, e1)
 		wrapped := fmt.Errorf("wrapper: %w", joined)
 
+		// Root unwraps through the fmt.Errorf wrapper, into the join, and returns root of first branch
 		result := Root(wrapped)
-		assert.Equal(t, joined, result)
+		assert.Equal(t, e0, result)
+	})
+
+	t.Run("root of deeply wrapped join", func(t *testing.T) {
+		deep := Sentinel("deep")
+		wrapped := fmt.Errorf("mid: %w", deep)
+		other := Sentinel("other")
+
+		joined := errors.Join(wrapped, other)
+
+		// Root follows first branch (wrapped) and unwraps to deep
+		result := Root(joined)
+		assert.Equal(t, deep, result)
+	})
+
+	t.Run("nil error", func(t *testing.T) {
+		result := Root(nil)
+		assert.Nil(t, result)
+	})
+}
+
+func TestIsType_WithErrorsJoin(t *testing.T) {
+	t.Run("find type in join", func(t *testing.T) {
+		structErr := errStruct{Err: "found"}
+		other := errors.New("other")
+
+		joined := errors.Join(other, structErr)
+
+		assert.True(t, IsType(joined, errStruct{}))
+	})
+
+	t.Run("find type in nested join", func(t *testing.T) {
+		structErr := errStruct{Err: "deep"}
+		wrapped := fmt.Errorf("wrap: %w", structErr)
+		other := errors.New("other")
+
+		joined := errors.Join(other, wrapped)
+
+		assert.True(t, IsType(joined, errStruct{}))
+	})
+
+	t.Run("type not in join", func(t *testing.T) {
+		e1 := errors.New("e1")
+		e2 := Sentinel("e2")
+
+		joined := errors.Join(e1, e2)
+
+		assert.False(t, IsType(joined, errStruct{}))
 	})
 }
 
@@ -394,7 +442,7 @@ type multiWrapperWithAs struct {
 	matchType string
 }
 
-func (e multiWrapperWithAs) Error() string { return "multiWithAs" }
+func (e multiWrapperWithAs) Error() string   { return "multiWithAs" }
 func (e multiWrapperWithAs) Unwrap() []error { return e.errs }
 
 func (e multiWrapperWithAs) As(target any) bool {

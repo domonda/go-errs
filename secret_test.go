@@ -13,7 +13,7 @@ import (
 func ExampleKeepSecret() {
 	secret := errs.KeepSecret("My Password!")
 	// Actual value:
-	fmt.Println(secret.Secrect())
+	fmt.Println(secret.Secret())
 	// Redacted string variants:
 	fmt.Println(secret)
 	fmt.Printf("%v\n", secret)
@@ -111,8 +111,8 @@ func TestSecret_DifferentTypes(t *testing.T) {
 			// String should always be redacted
 			require.Equal(t, "***REDACTED***", secret.String())
 
-			// Original value should be retrievable via Secrect()
-			require.Equal(t, tt.value, secret.Secrect())
+			// Original value should be retrievable via Secret()
+			require.Equal(t, tt.value, secret.Secret())
 
 			// FormatFunctionCall should use redacted value
 			formatted := errs.FormatFunctionCall("Func", secret)

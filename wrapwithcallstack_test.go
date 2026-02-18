@@ -1,6 +1,20 @@
 package errs
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+)
+
+func TestWrapWithCallStackSkip_Nil(t *testing.T) {
+	err := WrapWithCallStackSkip(0, nil)
+	assert.Nil(t, err, "WrapWithCallStackSkip with nil error should return nil")
+}
+
+func TestWrapWithCallStack_Nil(t *testing.T) {
+	err := WrapWithCallStack(nil)
+	assert.Nil(t, err, "WrapWithCallStack with nil error should return nil")
+}
 
 func TestNew(t *testing.T) {
 	err := New("test error")

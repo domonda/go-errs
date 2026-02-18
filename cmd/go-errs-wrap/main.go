@@ -148,7 +148,7 @@ func main() {
 	case "insert":
 		err = rewrite.Insert(sourcePath, outPath, recursive, minVariadic, validate, verboseOut)
 	default:
-		fmt.Fprintf(os.Stderr, "error: unknown command %q\n", command)
+		fmt.Fprintf(os.Stderr, "error: unknown command %q\n", command) // #nosec G705 -- CLI stderr output, not HTTP response
 		printUsage()
 		os.Exit(1)
 	}

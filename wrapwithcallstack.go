@@ -74,6 +74,9 @@ func WrapWithCallStack(err error) error {
 //	    return WrapWithCallStackSkip(1, fmt.Errorf("database error: %w", err))
 //	}
 func WrapWithCallStackSkip(skip int, err error) error {
+	if err == nil {
+		return nil
+	}
 	return &withCallStack{
 		err:       err,
 		callStack: callStack(1 + skip),

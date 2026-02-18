@@ -15,9 +15,10 @@ import (
 
 func TestIsDeferErrsWrap(t *testing.T) {
 	tests := []struct {
-		name string
-		code string
-		want bool
+		name    string
+		code    string
+		aliases map[string]bool
+		want    bool
 	}{
 		{
 			name: "defer errs.WrapWithFuncParams",
@@ -67,6 +68,20 @@ func f() { defer file.Close() }`,
 func f() { defer errors.Wrap(err) }`,
 			want: false,
 		},
+		{
+			name: "defer with alias",
+			code: `package test
+func f() { defer e.WrapWithFuncParams(&err, x) }`,
+			aliases: map[string]bool{"e": true},
+			want:    true,
+		},
+		{
+			name: "defer with alias not matching",
+			code: `package test
+func f() { defer e.WrapWithFuncParams(&err, x) }`,
+			aliases: map[string]bool{"errs": true},
+			want:    false,
+		},
 	}
 
 	for _, tt := range tests {
@@ -85,7 +100,11 @@ func f() { defer errors.Wrap(err) }`,
 			})
 			require.NotNil(t, deferStmt, "no defer statement found")
 
-			result := isDeferErrsWrap(deferStmt)
+			aliases := tt.aliases
+			if aliases == nil {
+				aliases = map[string]bool{"errs": true}
+			}
+			result := isDeferErrsWrap(deferStmt, aliases)
 			assert.Equal(t, tt.want, result)
 		})
 	}
@@ -93,9 +112,10 @@ func f() { defer errors.Wrap(err) }`,
 
 func TestIsVariadicWrapWithFuncParams(t *testing.T) {
 	tests := []struct {
-		name string
-		code string
-		want bool
+		name    string
+		code    string
+		aliases map[string]bool
+		want    bool
 	}{
 		{
 			name: "variadic WrapWithFuncParams",
@@ -133,6 +153,13 @@ func f() { defer errs.WrapWith10FuncParams(&err, a, b, c, d, e, f, g, h, i, j) }
 func f() { defer errors.WrapWithFuncParams(&err, x) }`,
 			want: false,
 		},
+		{
+			name: "variadic with alias",
+			code: `package test
+func f() { defer e.WrapWithFuncParams(&err, x) }`,
+			aliases: map[string]bool{"e": true},
+			want:    true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -151,7 +178,11 @@ func f() { defer errors.WrapWithFuncParams(&err, x) }`,
 			})
 			require.NotNil(t, deferStmt, "no defer statement found")
 
-			result := isVariadicWrapWithFuncParams(deferStmt)
+			aliases := tt.aliases
+			if aliases == nil {
+				aliases = map[string]bool{"errs": true}
+			}
+			result := isVariadicWrapWithFuncParams(deferStmt, aliases)
 			assert.Equal(t, tt.want, result)
 		})
 	}

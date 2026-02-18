@@ -4,6 +4,8 @@ Go error wrapping with call-stack and function parameter capture.
 
 [![Go Reference](https://pkg.go.dev/badge/github.com/domonda/go-errs.svg)](https://pkg.go.dev/github.com/domonda/go-errs)
 [![Go Report Card](https://goreportcard.com/badge/github.com/domonda/go-errs)](https://goreportcard.com/report/github.com/domonda/go-errs)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
 
 ## Features
 
@@ -12,7 +14,7 @@ Go error wrapping with call-stack and function parameter capture.
 - **Error wrapping compatible** - Works seamlessly with `errors.Is`, `errors.As`, and `errors.Unwrap`
 - **Helper utilities** - Common patterns for NotFound errors, context errors, and panic recovery
 - **Customizable formatting** - Control how sensitive data appears in error messages
-- **Go 1.23+ iterator support** - Convert errors to iterators for functional programming patterns
+- **Iterator support** - Convert errors to `iter.Seq` and `iter.Seq2` iterators
 
 ## Installation
 
@@ -190,24 +192,25 @@ func Login(username string, password string) (err error) {
 
 The `Secret` interface wraps a value and ensures it's never logged or printed:
 - `String()` returns `"***REDACTED***"`
-- Implements `pretty.Printable` to ensure redaction in error call stacks and pretty-printed output
-- Use `secret.Secrect()` to retrieve the actual value when needed
+- Implements `pretty.Stringer` (via `PrettyString()`) to ensure redaction in error call stacks and pretty-printed output
+- Use `secret.Secret()` to retrieve the actual value when needed
 
 **Important:** Wrapping a parameter with `errs.KeepSecret()` is preferable to omitting it entirely from a `defer errs.WrapWith*` statement. When you run `go-errs-wrap replace`, omitted parameters will be added back, but `KeepSecret`-wrapped parameters are preserved in their wrapped form.
 
-#### Custom Types with pretty.Printable
+#### Custom Types with go-pretty Interfaces
 
-For custom types, implement `pretty.Printable` from `github.com/domonda/go-pretty` to control how they appear in error messages:
+For custom types, implement one of the [go-pretty](https://github.com/domonda/go-pretty) interfaces to control how they appear in error messages. The interfaces are checked in priority order:
+
+1. **`pretty.PrintableWithResult`** — `PrettyPrint(io.Writer) (n int, err error)` — full control with byte count
+2. **`pretty.Printable`** — `PrettyPrint(io.Writer)` — simple writer-based formatting
+3. **`pretty.Stringer`** — `PrettyString() string` — simplest, just return a string
 
 ```go
-import "github.com/domonda/go-pretty"
+// Simplest approach: implement pretty.Stringer
+type Password string
 
-type Password struct {
-    value string
-}
-
-func (p Password) PrettyPrint(w io.Writer) {
-    io.WriteString(w, "***REDACTED***")
+func (Password) PrettyString() string {
+    return "***REDACTED***"
 }
 
 func Login(username string, pwd Password) (err error) {
@@ -217,19 +220,19 @@ func Login(username string, pwd Password) (err error) {
 }
 ```
 
-The `go-pretty` library automatically handles recursive formatting, so types implementing `pretty.Printable`
+The `go-pretty` library automatically handles recursive formatting, so types implementing any of these interfaces
 will be properly formatted even when nested in other structs.
 
 #### Customizing Call Stack Printing with PrintFuncFor
 
-**Default behavior:** By default, the `Printer` checks if a type implements the `pretty.Printable` interface. If it does, the `PrettyPrint(io.Writer)` method is called to format the value. This is the recommended approach for types you own and control.
+**Default behavior:** By default, the `Printer` checks if a type implements `pretty.PrintableWithResult`, `pretty.Printable`, or `pretty.Stringer` (in that order). This is the recommended approach for types you own and control.
 
-For advanced use cases where you need to customize formatting beyond implementing `pretty.Printable`, use `Printer.WithPrintFuncFor()`. This is useful when:
+For advanced use cases where you need to customize formatting beyond implementing these interfaces, use `Printer.WithPrintFuncFor()`. This is useful when:
 - You want to format types you don't control (third-party types, stdlib types)
 - You need runtime-conditional formatting based on values or context
 - You want to adapt types that implement other interfaces (e.g., `fmt.Stringer`)
 - You need to apply global formatting rules based on struct tags or type patterns
-- You want to override or wrap the default `Printable` behavior
+- You want to override or wrap the default behavior
 
 ```go
 import (
@@ -250,8 +253,8 @@ func init() {
             if strings.Contains(strings.ToLower(str), "password") ||
                strings.Contains(strings.ToLower(str), "token") ||
                strings.Contains(strings.ToLower(str), "apikey") {
-                return func(w io.Writer) {
-                    io.WriteString(w, "`***REDACTED***`")
+                return func(w io.Writer) (int, error) {
+                    return io.WriteString(w, "`***REDACTED***`")
                 }
             }
         }
@@ -259,14 +262,15 @@ func init() {
         // Example 2: Hide struct fields tagged with `secret:"true"`
         if v.Kind() == reflect.Struct {
             t := v.Type()
-            for i := 0; i < t.NumField(); i++ {
+            for i := range t.NumField() {
                 field := t.Field(i)
                 if field.Tag.Get("secret") == "true" {
                     // Create a custom formatter that masks tagged fields
-                    return func(w io.Writer) {
+                    return func(w io.Writer) (int, error) {
                         // Custom struct formatting logic here
-                        io.WriteString(w, t.Name())
-                        io.WriteString(w, "{***FIELDS_REDACTED***}")
+                        n1, _ := io.WriteString(w, t.Name())
+                        n2, err := io.WriteString(w, "{***FIELDS_REDACTED***}")
+                        return n1 + n2, err
                     }
                 }
             }
@@ -278,8 +282,8 @@ func init() {
             stringer, ok = v.Addr().Interface().(fmt.Stringer)
         }
         if ok {
-            return func(w io.Writer) {
-                io.WriteString(w, stringer.String())
+            return func(w io.Writer) (int, error) {
+                return io.WriteString(w, stringer.String())
             }
         }
 
@@ -298,22 +302,22 @@ func ProcessPayment(amount int, cardNumber string) (err error) {
 ```
 
 **Key points:**
-- **Default behavior**: If no `PrintFuncFor` is set, the `Printer` automatically checks if types implement `pretty.Printable` and calls their `PrettyPrint()` method
+- **Default behavior**: If no `PrintFuncFor` is set, the `Printer` automatically checks if types implement `pretty.PrintableWithResult`, `pretty.Printable`, or `pretty.Stringer`
 - `WithPrintFuncFor()` returns a new `Printer` with the custom hook installed
 - The hook receives a `reflect.Value` and returns a `pretty.PrintFunc` (or `nil` to use default)
-- **Important**: In a PrintFuncFor function, always return `pretty.PrintFuncForPrintable(v)` as the fallback to preserve the default `Printable` interface checking behavior if you want to honor the `Printable` interface.
+- **Important**: In a PrintFuncFor function, always return `pretty.PrintFuncForPrintable(v)` as the fallback to preserve the default interface checking behavior.
 - The hook applies to all values printed in error call stacks, including nested struct fields
 - This approach allows centralized control over sensitive data redaction without modifying type definitions
-- `PrintFuncFor` is evaluated for every value, allowing you to intercept and customize formatting before the `Printable` interface is checked
+- `PrintFuncFor` is evaluated for every value, allowing you to intercept and customize formatting before the default interfaces are checked
 
-**Comparison: Printable vs PrintFuncFor**
+**Comparison: Interfaces vs PrintFuncFor**
 
 ```go
-// Approach 1: Implement pretty.Printable (recommended for types you own)
+// Approach 1: Implement pretty.Stringer (recommended for types you own)
 type APIKey string
 
-func (k APIKey) PrettyPrint(w io.Writer) {
-    io.WriteString(w, "***REDACTED***")
+func (APIKey) PrettyString() string {
+    return "***REDACTED***"
 }
 
 // Approach 2: Use PrintFuncFor (for types you don't control or global rules)
@@ -321,11 +325,11 @@ func init() {
     errs.Printer = errs.Printer.WithPrintFuncFor(func(v reflect.Value) pretty.PrintFunc {
         // Check for APIKey type from a third-party package
         if v.Type().String() == "thirdparty.APIKey" {
-            return func(w io.Writer) {
-                io.WriteString(w, "***REDACTED***")
+            return func(w io.Writer) (int, error) {
+                return io.WriteString(w, "***REDACTED***")
             }
         }
-        // Fall back to checking for Printable interface
+        // Fall back to checking for default interfaces
         return pretty.PrintFuncForPrintable(v)
     })
 }
@@ -349,16 +353,38 @@ type User struct {
 
 ### Finding Errors by Type
 
+Since Go 1.26, the standard library provides `errors.AsType[E](err) (E, bool)` which returns the first matching error and a boolean. Use it when you need the matched value:
+
 ```go
-// Check if error chain contains a specific type
+// Go 1.26+: get first matching error (preferred when you need the value)
+if dbErr, ok := errors.AsType[*DatabaseError](err); ok {
+    log.Println("database error:", dbErr.Code)
+}
+```
+
+This package provides additional generic helpers:
+
+```go
+// Check if error chain contains a specific type (bool only, no value needed)
+// Equivalent to: _, ok := errors.AsType[*DatabaseError](err)
 if errs.Has[*DatabaseError](err) {
     // Handle database error
 }
 
-// Get all errors of a specific type from the chain
-dbErrors := errs.As[*DatabaseError](err)
-for _, dbErr := range dbErrors {
-    // Handle each database error
+// Get ALL errors of a specific type from the full wrapping tree.
+// Unlike errors.AsType which returns only the first match,
+// errs.As traverses the entire tree including multi-errors (errors.Join):
+//
+//   err := errors.Join(
+//       &ValidationError{Field: "name"},
+//       &ValidationError{Field: "email"},
+//   )
+//   errors.AsType[*ValidationError](err) // returns only "name"
+//   errs.As[*ValidationError](err)       // returns both "name" and "email"
+//
+allErrors := errs.As[*ValidationError](err)
+for _, vErr := range allErrors {
+    log.Println("invalid field:", vErr.Field)
 }
 
 // Check error type without custom Is/As methods
@@ -462,11 +488,15 @@ defer errs.WrapWith3FuncParams(&err, p0, p1, p2)
 ### 3. Protect sensitive data
 
 ```go
+// Simplest: implement pretty.Stringer
 type APIKey string
 
-func (k APIKey) PrintForCallStack(w io.Writer) {
-    io.WriteString(w, "***")
+func (APIKey) PrettyString() string {
+    return "***REDACTED***"
 }
+
+// Or use errs.KeepSecret for function parameters
+defer errs.WrapWithFuncParams(&err, errs.KeepSecret(apiKey))
 ```
 
 ### 4. Use errs.Errorf for wrapping
@@ -548,6 +578,7 @@ go-errs-wrap insert -verbose ./pkg/...
 |--------|-------------|
 | `-out <path>` | Output to different location instead of modifying source |
 | `-minvariadic` | Use specialized `WrapWithNFuncParams` functions instead of variadic |
+| `-validate` | Dry run mode: check for issues without modifying files (useful for CI) |
 | `-verbose` | Print progress information |
 | `-help` | Show help message |
 
@@ -609,7 +640,7 @@ This is preferable to omitting sensitive parameters entirely, as omitted paramet
 
 ## Compatibility
 
-- **Go version:** Requires Go 1.13+ for error wrapping, Go 1.23+ for iterator support
+- **Go version:** Requires Go 1.24+
 - **Error handling:** Fully compatible with `errors.Is`, `errors.As`, `errors.Unwrap`, and `errors.Join`
 - **Testing:** Use with `testify` or any testing framework
 
@@ -622,7 +653,7 @@ This is preferable to omitting sensitive parameters entirely, as omitted paramet
 
 ## Examples
 
-See the [examples directory](examples/) and [godoc](https://pkg.go.dev/github.com/domonda/go-errs) for more examples.
+See the [godoc](https://pkg.go.dev/github.com/domonda/go-errs) for more examples.
 
 ## License
 

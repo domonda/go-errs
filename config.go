@@ -25,18 +25,20 @@ var (
 	// Example - Masking sensitive data:
 	//
 	//	func init() {
-	//	    errs.Printer.AsPrintable = func(v reflect.Value) (pretty.Printable, bool) {
+	//	    errs.Printer = errs.Printer.WithPrintFuncFor(func(v reflect.Value) pretty.PrintFunc {
 	//	        if v.Kind() == reflect.String && strings.Contains(v.String(), "secret") {
-	//	            return printableAdapter{
-	//	                format: func(w io.Writer) {
-	//	                    fmt.Fprint(w, "`***REDACTED***`")
-	//	                },
-	//	            }, true
+	//	            return func(w io.Writer) (int, error) {
+	//	                return fmt.Fprint(w, "`***REDACTED***`")
+	//	            }
 	//	        }
-	//	        return pretty.AsPrintable(v) // Use default
-	//	    }
+	//	        return pretty.PrintFuncForPrintable(v) // Use default
+	//	    })
 	//	}
-	Printer = &pretty.DefaultPrinter
+	Printer = &pretty.Printer{
+		MaxStringLength: pretty.DefaultPrinter.MaxStringLength,
+		MaxErrorLength:  pretty.DefaultPrinter.MaxErrorLength,
+		MaxSliceLength:  pretty.DefaultPrinter.MaxSliceLength,
+	}
 
 	// FormatParamMaxLen is the maximum length in bytes for a single formatted
 	// parameter value in error call stacks. When a parameter's formatted

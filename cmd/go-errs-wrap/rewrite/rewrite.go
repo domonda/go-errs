@@ -1,4 +1,4 @@
-// Package rewrite provides functionality to remove or replace
+// Package rewrite provides functionality to remove, replace, or insert
 // defer errs.Wrap statements and //#wrap-result-err marker comments
 // in Go source files.
 package rewrite
@@ -388,7 +388,7 @@ func processFile(fset *token.FileSet, astFile *ast.File, minVariadic bool, verbo
 				return true
 			}
 			deferStmt, ok := n.(*ast.DeferStmt)
-			if !ok || !isDeferErrsWrap(deferStmt) {
+			if !ok || !isDeferErrsWrap(deferStmt, errsAliases) {
 				return true
 			}
 			// Find enclosing function and mark it as having a wrap
@@ -408,7 +408,7 @@ func processFile(fset *token.FileSet, astFile *ast.File, minVariadic bool, verbo
 			}
 
 			deferStmt, ok := n.(*ast.DeferStmt)
-			if !ok || !isDeferErrsWrap(deferStmt) {
+			if !ok || !isDeferErrsWrap(deferStmt, errsAliases) {
 				return true
 			}
 
@@ -441,7 +441,7 @@ func processFile(fset *token.FileSet, astFile *ast.File, minVariadic bool, verbo
 
 			// If already using variadic WrapWithFuncParams and minVariadic is false, keep it variadic
 			var replacement string
-			if !minVariadic && isVariadicWrapWithFuncParams(deferStmt) {
+			if !minVariadic && isVariadicWrapWithFuncParams(deferStmt, errsAliases) {
 				replacement = generateVariadicWrapStatement(fun)
 			} else {
 				replacement = generateWrapStatement(fun)
@@ -579,7 +579,8 @@ func processFile(fset *token.FileSet, astFile *ast.File, minVariadic bool, verbo
 }
 
 // isDeferErrsWrap checks if a defer statement is calling errs.Wrap* function
-func isDeferErrsWrap(stmt *ast.DeferStmt) bool {
+// using any of the known import aliases for go-errs.
+func isDeferErrsWrap(stmt *ast.DeferStmt, errsAliases map[string]bool) bool {
 	call, ok := stmt.Call.Fun.(*ast.SelectorExpr)
 	if !ok {
 		return false
@@ -590,7 +591,7 @@ func isDeferErrsWrap(stmt *ast.DeferStmt) bool {
 		return false
 	}
 
-	if ident.Name != "errs" {
+	if !errsAliases[ident.Name] {
 		return false
 	}
 
@@ -598,8 +599,9 @@ func isDeferErrsWrap(stmt *ast.DeferStmt) bool {
 }
 
 // isVariadicWrapWithFuncParams checks if a defer statement is calling
-// the variadic errs.WrapWithFuncParams function (not a specialized version).
-func isVariadicWrapWithFuncParams(stmt *ast.DeferStmt) bool {
+// the variadic errs.WrapWithFuncParams function (not a specialized version)
+// using any of the known import aliases for go-errs.
+func isVariadicWrapWithFuncParams(stmt *ast.DeferStmt, errsAliases map[string]bool) bool {
 	call, ok := stmt.Call.Fun.(*ast.SelectorExpr)
 	if !ok {
 		return false
@@ -610,7 +612,7 @@ func isVariadicWrapWithFuncParams(stmt *ast.DeferStmt) bool {
 		return false
 	}
 
-	if ident.Name != "errs" {
+	if !errsAliases[ident.Name] {
 		return false
 	}
 

@@ -8,10 +8,11 @@ import (
 	"strings"
 )
 
-// FormatFunctionCall formats a function call with parameters using pretty.Printable.
+// FormatFunctionCall formats a function call with parameters using go-pretty.
 //
-// Types can implement pretty.Printable from github.com/domonda/go-pretty to customize
-// their representation in error call stacks and other formatted output.
+// Types can implement pretty.Stringer, pretty.Printable, or pretty.PrintableWithResult
+// from github.com/domonda/go-pretty to customize their representation in error call
+// stacks and other formatted output.
 //
 // Example:
 //
@@ -19,12 +20,12 @@ import (
 //	    value string
 //	}
 //
-//	func (s SensitiveData) PrettyPrint(w io.Writer) {
-//	    io.WriteString(w, "***REDACTED***")
+//	func (SensitiveData) PrettyString() string {
+//	    return "***REDACTED***"
 //	}
 //
-// Since go-pretty already handles recursive checking of pretty.Printable implementations
-// in nested struct fields, types are properly formatted at any nesting level.
+// Since go-pretty handles recursive checking in nested struct fields,
+// types are properly formatted at any nesting level.
 
 // formatError formats an error with its call stack and function parameters.
 // It unwraps the error chain and builds a formatted string showing:
@@ -92,8 +93,10 @@ func formatCallStackParams(e callStackParamsProvider) string {
 }
 
 // FormatFunctionCall formats a function call in pseudo syntax
-// using the Printer variable to format parameters. Types that implement pretty.Printable
-// will use their PrettyPrint method, and this works recursively for nested structs.
+// using the Printer variable to format parameters.
+// Types implementing pretty.PrintableWithResult, pretty.Printable,
+// or pretty.Stringer will use their respective methods,
+// and this works recursively for nested structs.
 //
 // FormatFunctionCall is a function variable that can be changed
 // to globally configure the formatting of function calls.
@@ -104,10 +107,9 @@ func formatCallStackParams(e callStackParamsProvider) string {
 //
 //	functionName(param1, param2, ...)
 //
-// Each parameter is formatted using the Printer variable, which respects
-// types implementing pretty.Printable. If a formatted parameter exceeds
-// FormatParamMaxLen bytes, it will be truncated to ensure valid UTF-8
-// and suffixed with "…(TRUNCATED)".
+// Each parameter is formatted using the Printer variable. If a formatted
+// parameter exceeds FormatParamMaxLen bytes, it will be truncated to ensure
+// valid UTF-8 and suffixed with "…(TRUNCATED)".
 var FormatFunctionCall = func(function string, params ...any) string {
 	var b strings.Builder
 	b.WriteString(function)
@@ -116,15 +118,13 @@ var FormatFunctionCall = func(function string, params ...any) string {
 		if i > 0 {
 			b.WriteString(", ")
 		}
-		var paramBuf bytes.Buffer
-		Printer.Fprint(&paramBuf, param)
-		if paramBuf.Len() > FormatParamMaxLen {
-			bStr := paramBuf.Bytes()[:FormatParamMaxLen]
+		paramStr := Printer.Sprint(param)
+		if len(paramStr) > FormatParamMaxLen {
 			// Cut off slice may end with invalid UTF-8 sequence
-			b.Write(bytes.ToValidUTF8(bStr, nil))
+			b.Write(bytes.ToValidUTF8([]byte(paramStr[:FormatParamMaxLen]), nil))
 			b.WriteString("…(TRUNCATED)")
 		} else {
-			b.Write(paramBuf.Bytes())
+			b.WriteString(paramStr)
 		}
 	}
 	b.WriteByte(')')

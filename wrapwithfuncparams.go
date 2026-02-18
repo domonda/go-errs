@@ -14,8 +14,8 @@ func wrapWithFuncParamsSkip(skip int, err error, params ...any) *withCallStackFu
 	case callStackParamsProvider:
 		// OK, wrap the wrapped
 	case callStackProvider:
-		// Already wrapped with stack,
-		// replace wrapper wrapWithStackParams
+		// Already wrapped with call stack,
+		// replace with withCallStackFuncParams
 		return &withCallStackFuncParams{
 			withCallStack: withCallStack{
 				err:       w.Unwrap(),

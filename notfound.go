@@ -6,7 +6,7 @@ import (
 	"os"
 )
 
-// ErrNotFound is an universal error returned in case
+// ErrNotFound is a universal error returned in case
 // that a requested resource could not be found.
 //
 // Recommended usage:
@@ -38,7 +38,7 @@ func IsErrNotFound(err error) bool {
 }
 
 // IsOtherThanErrNotFound returns true if the passed error is not nil
-// and does not unwrap to, or is ErrNotFound, sql.ErrNoRows, or os.ErrNotExist.
+// and does not unwrap to or is not ErrNotFound, sql.ErrNoRows, or os.ErrNotExist.
 func IsOtherThanErrNotFound(err error) bool {
 	return err != nil &&
 		!errors.Is(err, ErrNotFound) &&

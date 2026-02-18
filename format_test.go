@@ -13,26 +13,28 @@ import (
 	"github.com/domonda/go-pretty"
 )
 
-// Test types that implement pretty.Printable
+// Test types that implement pretty.PrintableWithResult
 
 type SimplePrintable struct {
 	Value string
 }
 
-func (s *SimplePrintable) PrettyPrint(w io.Writer) {
-	io.WriteString(w, "Simple{")
-	io.WriteString(w, s.Value)
-	io.WriteString(w, "}")
+func (s *SimplePrintable) PrettyPrint(w io.Writer) (int, error) {
+	n1, _ := io.WriteString(w, "Simple{")
+	n2, _ := io.WriteString(w, s.Value)
+	n3, err := io.WriteString(w, "}")
+	return n1 + n2 + n3, err
 }
 
 type NestedPrintable struct {
 	Value string
 }
 
-func (n *NestedPrintable) PrettyPrint(w io.Writer) {
-	io.WriteString(w, "Nested{")
-	io.WriteString(w, n.Value)
-	io.WriteString(w, "}")
+func (n *NestedPrintable) PrettyPrint(w io.Writer) (int, error) {
+	n1, _ := io.WriteString(w, "Nested{")
+	n2, _ := io.WriteString(w, n.Value)
+	n3, err := io.WriteString(w, "}")
+	return n1 + n2 + n3, err
 }
 
 // Struct with nested pretty.Printable field
@@ -346,8 +348,8 @@ func TestPrintFuncFor_MaskSensitiveStrings(t *testing.T) {
 			if strings.Contains(strings.ToLower(str), "password") ||
 				strings.Contains(strings.ToLower(str), "token") ||
 				strings.Contains(strings.ToLower(str), "apikey") {
-				return func(w io.Writer) {
-					io.WriteString(w, "`***REDACTED***`")
+				return func(w io.Writer) (int, error) {
+					return io.WriteString(w, "`***REDACTED***`")
 				}
 			}
 		}
@@ -374,8 +376,8 @@ func TestPrintFuncFor_CustomTypeRedaction(t *testing.T) {
 	// Configure printer to mask ThirdPartyAPIKey type
 	Printer = Printer.WithPrintFuncFor(func(v reflect.Value) pretty.PrintFunc {
 		if v.Type().String() == "errs.ThirdPartyAPIKey" {
-			return func(w io.Writer) {
-				io.WriteString(w, "***REDACTED_API_KEY***")
+			return func(w io.Writer) (int, error) {
+				return io.WriteString(w, "***REDACTED_API_KEY***")
 			}
 		}
 		return pretty.PrintFuncForPrintable(v)
@@ -402,8 +404,8 @@ func TestPrintFuncFor_AdaptFmtStringer(t *testing.T) {
 			stringer, ok = v.Addr().Interface().(fmt.Stringer)
 		}
 		if ok {
-			return func(w io.Writer) {
-				io.WriteString(w, stringer.String())
+			return func(w io.Writer) (int, error) {
+				return io.WriteString(w, stringer.String())
 			}
 		}
 		return pretty.PrintFuncForPrintable(v)
@@ -435,9 +437,10 @@ func TestPrintFuncFor_StructFieldMasking(t *testing.T) {
 				}
 			}
 			if hasSecretField {
-				return func(w io.Writer) {
-					io.WriteString(w, t.Name())
-					io.WriteString(w, "{***FIELDS_REDACTED***}")
+				return func(w io.Writer) (int, error) {
+					n1, _ := io.WriteString(w, t.Name())
+					n2, err := io.WriteString(w, "{***FIELDS_REDACTED***}")
+					return n1 + n2, err
 				}
 			}
 		}
@@ -465,8 +468,8 @@ func TestPrintFuncFor_PreservesPrintableInterface(t *testing.T) {
 	Printer = Printer.WithPrintFuncFor(func(v reflect.Value) pretty.PrintFunc {
 		// Custom logic that doesn't match our types
 		if v.Kind() == reflect.String && v.String() == "special" {
-			return func(w io.Writer) {
-				io.WriteString(w, "`SPECIAL`")
+			return func(w io.Writer) (int, error) {
+				return io.WriteString(w, "`SPECIAL`")
 			}
 		}
 		// Fall back to default Printable interface handling
@@ -495,8 +498,8 @@ func TestPrintFuncFor_WithWrapWithFuncParams(t *testing.T) {
 		if v.Kind() == reflect.String {
 			str := v.String()
 			if strings.Contains(str, "secret-") {
-				return func(w io.Writer) {
-					io.WriteString(w, "`***REDACTED***`")
+				return func(w io.Writer) (int, error) {
+					return io.WriteString(w, "`***REDACTED***`")
 				}
 			}
 		}
@@ -531,8 +534,8 @@ func TestPrintFuncFor_NestedStructsWithCustomFormatting(t *testing.T) {
 	// Configure printer to mask SensitiveData type
 	Printer = Printer.WithPrintFuncFor(func(v reflect.Value) pretty.PrintFunc {
 		if v.Type().String() == "errs.SensitiveData" {
-			return func(w io.Writer) {
-				io.WriteString(w, "SensitiveData{***MASKED***}")
+			return func(w io.Writer) (int, error) {
+				return io.WriteString(w, "SensitiveData{***MASKED***}")
 			}
 		}
 		return pretty.PrintFuncForPrintable(v)
@@ -564,8 +567,8 @@ func TestPrintFuncFor_NilReturnUsesDefault(t *testing.T) {
 	// Configure printer that returns nil for non-matching cases
 	Printer = Printer.WithPrintFuncFor(func(v reflect.Value) pretty.PrintFunc {
 		if v.Kind() == reflect.String && v.String() == "intercept" {
-			return func(w io.Writer) {
-				io.WriteString(w, "`INTERCEPTED`")
+			return func(w io.Writer) (int, error) {
+				return io.WriteString(w, "`INTERCEPTED`")
 			}
 		}
 		// Return nil to use default behavior

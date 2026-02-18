@@ -21,7 +21,7 @@ func AsError(val any) error {
 	case fmt.Stringer:
 		return errors.New(x.String())
 	default:
-		return errors.New(Printer.Sprint(val))
+		return errors.New(fmt.Sprint(val))
 	}
 }
 
@@ -41,7 +41,7 @@ func AsErrorWithDebugStack(val any) error {
 // of the panic and the passed function parameter values
 // and prints it with the prefix "LogPanicWithFuncParams: "
 // to the passed Logger.
-// After logging, the original panic is re-paniced.
+// After logging, the original panic is re-panicked.
 func LogPanicWithFuncParams(log Logger, params ...any) {
 	p := recover()
 	if p == nil {
@@ -84,7 +84,7 @@ func RecoverPanicAsError(result *error) {
 
 	err := AsErrorWithDebugStack(p)
 	if *result != nil {
-		err = fmt.Errorf("function returning error (%s) paniced with: %w", *result, err)
+		err = fmt.Errorf("function returning error (%s) panicked with: %w", *result, err)
 	}
 
 	*result = err
@@ -103,7 +103,7 @@ func RecoverPanicAsErrorWithFuncParams(result *error, params ...any) {
 	err := AsErrorWithDebugStack(p)
 	err = wrapWithFuncParamsSkip(1, err, params...)
 	if *result != nil {
-		err = fmt.Errorf("function returning error (%s) paniced with: %w", *result, err)
+		err = fmt.Errorf("function returning error (%s) panicked with: %w", *result, err)
 	}
 
 	*result = err

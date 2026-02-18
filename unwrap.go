@@ -6,18 +6,47 @@ import (
 )
 
 // Root unwraps err recursively and returns the root error.
+//
+// It uses the interfaces
+//
+//	interface{ Unwrap() error }
+//	interface{ Unwrap() []error }
+//
+// For multi-error trees (errors.Join), it returns the root
+// of the first non-nil branch.
 func Root(err error) error {
-	for {
-		unwrapped := errors.Unwrap(err)
-		if unwrapped == nil {
+	for err != nil {
+		switch x := err.(type) {
+		case interface{ Unwrap() error }:
+			unwrapped := x.Unwrap()
+			if unwrapped == nil {
+				return err
+			}
+			err = unwrapped
+		case interface{ Unwrap() []error }:
+			for _, e := range x.Unwrap() {
+				if e != nil {
+					return Root(e)
+				}
+			}
+			return err
+		default:
 			return err
 		}
-		err = unwrapped
 	}
+	return err
 }
 
-// Has is a shortcut for errors.As
-// when the target error value is not needed.
+// Has reports whether err's tree contains an error of type T.
+// It is a shortcut for errors.As when the target value is not needed.
+//
+// Since Go 1.26, the standard library provides [errors.AsType]
+// which returns the matched error value along with a bool:
+//
+//	target, ok := errors.AsType[*MyError](err)
+//
+// Use Has when you only need the boolean check and don't need
+// the matched error value. Use errors.AsType when you need both.
 func Has[T error](err error) bool {
 	var target T
 	return errors.As(err, &target)
@@ -25,8 +54,23 @@ func Has[T error](err error) bool {
 
 // As returns all errors of type T in the wrapping tree of err.
 //
-// This function is similar to errors.As
-// but traverses the full tree using the interface methods:
+// Unlike [errors.AsType] (Go 1.26+) which returns only the first match,
+// this function traverses the full error tree and collects all matches.
+// This is particularly useful with multi-errors ([errors.Join]) where
+// multiple errors of the same type may exist in different branches.
+//
+// Example:
+//
+//	err := errors.Join(
+//	    &ValidationError{Field: "name"},
+//	    &ValidationError{Field: "email"},
+//	)
+//	// errors.AsType returns only the first:
+//	first, _ := errors.AsType[*ValidationError](err) // Field: "name"
+//	// errs.As returns all:
+//	all := errs.As[*ValidationError](err)             // both "name" and "email"
+//
+// It traverses the full tree using the interface methods:
 //
 //	Unwrap() error
 //	Unwrap() []error
@@ -148,9 +192,14 @@ func UnwrapCallStack(err error) error {
 
 // IsType returns if err or any unwrapped error
 // is of the type of the passed ref error.
-// It works similar than errors.As but
+// It works similar to errors.As but
 // without assigning to the ref error
 // and without checking for Is or As methods.
+//
+// It uses the interfaces
+//
+//	interface{ Unwrap() error }
+//	interface{ Unwrap() []error }
 func IsType(err, ref error) bool {
 	if err == ref {
 		return true
@@ -159,21 +208,31 @@ func IsType(err, ref error) bool {
 		return false
 	}
 	t := reflect.TypeOf(ref)
-	for {
+	for err != nil {
 		if reflect.TypeOf(err) == t {
 			return true
 		}
-		err = errors.Unwrap(err)
-		if err == nil {
+		switch x := err.(type) {
+		case interface{ Unwrap() error }:
+			err = x.Unwrap()
+		case interface{ Unwrap() []error }:
+			for _, e := range x.Unwrap() {
+				if IsType(e, ref) {
+					return true
+				}
+			}
+			return false
+		default:
 			return false
 		}
 	}
+	return false
 }
 
 // Type indicates if err is not nil and it
 // or any unwrapped error is of the type T.
-// It works similar than errors.As but
-// without assigning to the ref error
+// It works similarly to errors.As but
+// without assigning to a target error
 // and without checking for Is or As methods.
 func Type[T error](err error) bool {
 	for err != nil {

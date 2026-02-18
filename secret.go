@@ -1,17 +1,14 @@
 package errs
 
-import (
-	"fmt"
-	"io"
-)
+import "fmt"
 
 // Secret is an interface that wraps a secret value
 // to prevent it from being logged or printed.
-// It implements CallStackPrintable to ensure secrets
+// It implements pretty.Stringer to ensure secrets
 // are never revealed in error call stacks.
 type Secret interface {
-	// Secrect returns the wrapped secret value.
-	Secrect() any
+	// Secret returns the wrapped secret value.
+	Secret() any
 
 	// String returns a redacted string that indicates
 	// that the value is a secret without revealing the actual value.
@@ -26,7 +23,7 @@ func KeepSecret(val any) Secret {
 
 type secret struct{ val any }
 
-func (s secret) Secrect() any {
+func (s secret) Secret() any {
 	return s.val
 }
 
@@ -38,8 +35,8 @@ func (s secret) GoString() string {
 	return fmt.Sprintf("%T(***REDACTED***)", s.val)
 }
 
-// PrettyPrint implements the pretty.Printable interface
+// PrettyString implements the pretty.Stringer interface
 // to ensure secrets are never revealed in pretty-printed output or error messages.
-func (secret) PrettyPrint(w io.Writer) {
-	io.WriteString(w, "***REDACTED***") // #nosec G104 -- intentionally ignoring error for simple string write
+func (secret) PrettyString() string {
+	return "***REDACTED***"
 }
