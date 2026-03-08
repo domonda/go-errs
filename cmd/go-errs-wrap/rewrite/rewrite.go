@@ -254,7 +254,7 @@ func processSingleFileWithOutput(sourcePath, outPath string, minVariadic, valida
 			}
 
 			// Write to output
-			// #nosec G306 -- 0640 is appropriate for generated Go source files
+			// #nosec G306,G703 -- 0640 is appropriate for generated Go source files, paths are constructed via filepath.Join
 			if err := os.WriteFile(outPath, rewritten, 0640); err != nil {
 				return nil, nil, err
 			}
@@ -356,7 +356,7 @@ func processDirectoryWithOutput(sourcePath, outPath string, recursive, minVariad
 				}
 
 				// Write to destination
-				// #nosec G306 -- 0640 is appropriate for generated Go source files
+				// #nosec G306,G703 -- 0640 is appropriate for generated Go source files, paths are constructed via filepath.Join
 				if err := os.WriteFile(destPath, rewritten, 0640); err != nil {
 					return nil, nil, err
 				}
@@ -634,5 +634,5 @@ func copyFile(src, dst string) error {
 		return err
 	}
 
-	return os.WriteFile(dst, source, info.Mode())
+	return os.WriteFile(dst, source, info.Mode()) // #nosec G703 -- paths are cleaned via filepath.Clean above
 }
