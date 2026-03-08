@@ -3,6 +3,7 @@ package errs
 import (
 	"errors"
 	"reflect"
+	"slices"
 )
 
 // Root unwraps err recursively and returns the root error.
@@ -243,12 +244,7 @@ func Type[T error](err error) bool {
 		case interface{ Unwrap() error }:
 			err = x.Unwrap()
 		case interface{ Unwrap() []error }:
-			for _, e := range x.Unwrap() {
-				if Type[T](e) {
-					return true
-				}
-			}
-			return false
+			return slices.ContainsFunc(x.Unwrap(), Type[T])
 		default:
 			return false
 		}

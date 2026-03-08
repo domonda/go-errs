@@ -126,8 +126,8 @@ func main() {
 
 	// Check if user passed a "..." pattern (e.g., "./..." or "./pkg/...")
 	recursive := false
-	if strings.HasSuffix(sourcePath, "/...") {
-		sourcePath = strings.TrimSuffix(sourcePath, "/...")
+	if before, ok := strings.CutSuffix(sourcePath, "/..."); ok {
+		sourcePath = before
 		recursive = true
 	} else if sourcePath == "..." {
 		sourcePath = "."

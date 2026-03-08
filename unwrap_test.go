@@ -3,6 +3,7 @@ package errs
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -424,14 +425,15 @@ type multiWrapper struct {
 }
 
 func (e multiWrapper) Error() string {
-	msg := "multi:"
+	var msg strings.Builder
+	msg.WriteString("multi:")
 	for i, err := range e.errs {
 		if i > 0 {
-			msg += ","
+			msg.WriteString(",")
 		}
-		msg += err.Error()
+		msg.WriteString(err.Error())
 	}
-	return msg
+	return msg.String()
 }
 
 func (e multiWrapper) Unwrap() []error { return e.errs }
@@ -458,7 +460,7 @@ func (e multiWrapperWithAs) As(target any) bool {
 // deepWrapper creates a chain of single-wrapped errors
 func deepWrapper(depth int, root error) error {
 	err := root
-	for i := 0; i < depth; i++ {
+	for range depth {
 		err = errWrapper{Wrapped: err}
 	}
 	return err
