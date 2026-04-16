@@ -55,6 +55,11 @@ func generateWrapStatement(fun *funcInfo) string {
 }
 
 func generateVariadicWrapStatement(fun *funcInfo) string {
+	if len(fun.paramNames) == 0 {
+		return fmt.Sprintf("defer errs.WrapWithFuncParams(&%s)",
+			fun.errorResultName,
+		)
+	}
 	return fmt.Sprintf("defer errs.WrapWithFuncParams(&%s, %s)",
 		fun.errorResultName,
 		formatParams(fun.paramNames, fun.keepSecretNames),

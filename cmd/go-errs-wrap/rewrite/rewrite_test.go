@@ -1090,6 +1090,34 @@ func NoError() {
 	assert.Equal(t, inputCode, string(content))
 }
 
+func TestReplaceValidateModeZeroParamVariadic(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "go-errs-wrap-test-*")
+	require.NoError(t, err)
+	defer os.RemoveAll(tmpDir)
+
+	inputCode := `package test
+
+import "github.com/domonda/go-errs"
+
+func NoParams() (err error) {
+	defer errs.WrapWithFuncParams(&err)
+
+	return nil
+}
+`
+
+	inputFile := filepath.Join(tmpDir, "input.go")
+	err = os.WriteFile(inputFile, []byte(inputCode), 0644)
+	require.NoError(t, err)
+
+	err = Replace(inputFile, "", false, false, true, nil)
+	require.NoError(t, err)
+
+	content, readErr := os.ReadFile(inputFile)
+	require.NoError(t, readErr)
+	assert.Equal(t, inputCode, string(content))
+}
+
 func TestInsertValidateMode(t *testing.T) {
 	// Create a temporary directory for test files
 	tmpDir, err := os.MkdirTemp("", "go-errs-wrap-test-*")
