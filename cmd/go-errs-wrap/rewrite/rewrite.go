@@ -125,48 +125,41 @@ func process(sourcePath, outPath string, recursive, minVariadic, validate bool, 
 				return nil, nil, err
 			}
 
-			// In validation mode, check if replacements would actually change the file
-			if validate && len(replacements) > 0 {
-				// Read original source
+			// Filter out no-op replacements: a replacement that produces the
+			// exact source text already at its node's position would only
+			// trigger import reordering and other formatting churn without
+			// actually fixing anything. Skipping them here ensures both:
+			//   - validate mode reports only genuine issues, not false
+			//     positives caused by unrelated formatting differences
+			//   - normal mode does not rewrite a file (and reorder its
+			//     imports) when every wrap statement is already correct
+			if len(replacements) > 0 {
 				// #nosec G304 -- filePath comes from astvisit callback and is validated via filepath.Rel
 				source, err := os.ReadFile(filePath)
 				if err != nil {
 					return nil, nil, err
 				}
-
-				// Apply replacements to see if file would change
-				rewritten, err := replacements.Apply(fset, source)
-				if err != nil {
-					return nil, nil, err
+				filtered := replacements[:0]
+				for _, repl := range replacements {
+					if repl.Node != nil && !replacementChangesSource(fset, source, repl) {
+						continue
+					}
+					filtered = append(filtered, repl)
 				}
+				replacements = filtered
+			}
 
-				// Apply the same formatting that would happen in normal mode
-				if mode == modeRemove {
-					rewritten, err = goimports.Process(filePath, rewritten, nil)
-					if err != nil {
-						return nil, nil, err
+			if validate {
+				for _, repl := range replacements {
+					var pos token.Position
+					if repl.Node != nil {
+						pos = fset.Position(repl.Node.Pos())
 					}
-				} else {
-					rewritten, err = astvisit.FormatFileWithImports(fset, rewritten, imports)
-					if err != nil {
-						return nil, nil, err
+					desc := repl.DebugID
+					if desc == "" {
+						desc = "error wrapper"
 					}
-				}
-
-				// Check if the content actually changed
-				if !bytes.Equal(source, rewritten) {
-					// File would change - report as validation error
-					for _, repl := range replacements {
-						var pos token.Position
-						if repl.Node != nil {
-							pos = fset.Position(repl.Node.Pos())
-						}
-						desc := repl.DebugID
-						if desc == "" {
-							desc = "error wrapper"
-						}
-						validationErrors = append(validationErrors, fmt.Sprintf("%s: missing %s", pos, desc))
-					}
+					validationErrors = append(validationErrors, fmt.Sprintf("%s: missing %s", pos, desc))
 				}
 
 				// Return nil to prevent file modification in validate mode
@@ -617,6 +610,34 @@ func isVariadicWrapWithFuncParams(stmt *ast.DeferStmt, errsAliases map[string]bo
 	}
 
 	return call.Sel.Name == "WrapWithFuncParams"
+}
+
+// replacementChangesSource reports whether applying repl would actually
+// change the source text at the node's position. Used in validate mode to
+// avoid false positives from whole-file comparisons where unrelated
+// formatting (e.g. import reordering) makes the rewritten file differ
+// even though every replacement is a no-op.
+func replacementChangesSource(fset *token.FileSet, source []byte, repl astvisit.NodeReplacement) bool {
+	start := fset.Position(repl.Node.Pos()).Offset
+	end := fset.Position(repl.Node.End()).Offset
+	if start < 0 || end < start || end > len(source) {
+		// Can't determine original slice - treat as a change to be safe.
+		return true
+	}
+	original := source[start:end]
+
+	switch r := repl.Replacement.(type) {
+	case nil:
+		// Removal always changes the source.
+		return true
+	case string:
+		return string(original) != r
+	case []byte:
+		return !bytes.Equal(original, r)
+	default:
+		// Unknown replacement types may format non-deterministically; assume change.
+		return true
+	}
 }
 
 func copyFile(src, dst string) error {

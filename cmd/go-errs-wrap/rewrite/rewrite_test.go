@@ -1280,3 +1280,149 @@ func NoError() {
 	require.NoError(t, readErr)
 	assert.Equal(t, inputCode, string(content))
 }
+
+// TestReplaceValidateModeUnsortedImports verifies that replace -validate
+// does NOT report missing wrappers just because imports are not sorted.
+// Import reordering is a formatting concern handled by goimports/gofmt, not
+// a concern of the error-wrap validator. Regression test for a bug where
+// any whole-file formatting difference (including pure import reordering)
+// caused every already-correct defer errs.Wrap to be flagged as "missing".
+func TestReplaceValidateModeUnsortedImports(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "go-errs-wrap-test-*")
+	require.NoError(t, err)
+	defer os.RemoveAll(tmpDir)
+
+	// All wrap statements are already correct, but the imports within the
+	// domonda group are not alphabetically sorted (domonda-service/...
+	// appears after go-errs/golog instead of before them).
+	inputCode := `package test
+
+import (
+	"context"
+
+	"github.com/domonda/go-errs"
+	"github.com/domonda/golog"
+	"github.com/domonda/example-project/pkg/object"
+)
+
+var _ = golog.CallingFunctionName
+var _ = object.ClassRealEstateObject
+
+func ProcessData(ctx context.Context, id string) (err error) {
+	defer errs.WrapWithFuncParams(&err, ctx, id)
+
+	return nil
+}
+`
+
+	inputFile := filepath.Join(tmpDir, "input.go")
+	err = os.WriteFile(inputFile, []byte(inputCode), 0644)
+	require.NoError(t, err)
+
+	// Validate should succeed: the defer statement itself is already correct.
+	err = Replace(inputFile, "", false, false, true, nil)
+	require.NoError(t, err, "unsorted imports alone must not trigger a missing-wrapper error")
+
+	// File must not be modified in validate mode.
+	content, readErr := os.ReadFile(inputFile)
+	require.NoError(t, readErr)
+	assert.Equal(t, inputCode, string(content))
+}
+
+// TestReplaceNoOpDoesNotReorderImports verifies that running replace (without
+// -validate) on a file whose wrap statements are all already correct does NOT
+// modify the file — even if the file's imports are not in the order that
+// goimports would produce. The tool's job is to fix wrap statements, not to
+// reformat unrelated code; import sorting belongs to gofmt/goimports.
+func TestReplaceNoOpDoesNotReorderImports(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "go-errs-wrap-test-*")
+	require.NoError(t, err)
+	defer os.RemoveAll(tmpDir)
+
+	// Imports within the domonda group are NOT alphabetically sorted.
+	// All defer wrap statements are already correct.
+	inputCode := `package test
+
+import (
+	"context"
+
+	"github.com/domonda/go-errs"
+	"github.com/domonda/golog"
+	"github.com/domonda/example-project/pkg/object"
+)
+
+var _ = golog.CallingFunctionName
+var _ = object.ClassRealEstateObject
+
+func ProcessData(ctx context.Context, id string) (err error) {
+	defer errs.WrapWithFuncParams(&err, ctx, id)
+
+	return nil
+}
+`
+
+	inputFile := filepath.Join(tmpDir, "input.go")
+	err = os.WriteFile(inputFile, []byte(inputCode), 0644)
+	require.NoError(t, err)
+
+	// Run replace in normal (non-validate) mode.
+	err = Replace(inputFile, "", false, false, false, nil)
+	require.NoError(t, err)
+
+	// File must be byte-for-byte unchanged: no replacements were needed,
+	// so import order should not have been touched.
+	content, readErr := os.ReadFile(inputFile)
+	require.NoError(t, readErr)
+	assert.Equal(t, inputCode, string(content), "no-op replace must not reorder imports")
+}
+
+// TestReplaceValidateModeReportsOnlyActuallyOutdatedWrappers verifies that
+// when a file contains a mix of correct and outdated wrap statements and
+// also has unsorted imports, validate reports ONLY the outdated one — not
+// every defer in the file.
+func TestReplaceValidateModeReportsOnlyActuallyOutdatedWrappers(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "go-errs-wrap-test-*")
+	require.NoError(t, err)
+	defer os.RemoveAll(tmpDir)
+
+	// Two functions: first has a correct wrapper, second is outdated
+	// (missing the id parameter). Imports are also unsorted.
+	inputCode := `package test
+
+import (
+	"context"
+
+	"github.com/domonda/go-errs"
+	"github.com/domonda/golog"
+	"github.com/domonda/example-project/pkg/object"
+)
+
+var _ = golog.CallingFunctionName
+var _ = object.ClassRealEstateObject
+
+func Correct(ctx context.Context, id string) (err error) {
+	defer errs.WrapWithFuncParams(&err, ctx, id)
+
+	return nil
+}
+
+func Outdated(ctx context.Context, id string) (err error) {
+	defer errs.WrapWithFuncParams(&err, ctx)
+
+	return nil
+}
+`
+
+	inputFile := filepath.Join(tmpDir, "input.go")
+	err = os.WriteFile(inputFile, []byte(inputCode), 0644)
+	require.NoError(t, err)
+
+	err = Replace(inputFile, "", false, false, true, nil)
+	require.Error(t, err)
+	// Exactly one missing wrapper, not two.
+	assert.Contains(t, err.Error(), "found 1 missing error wrapper")
+
+	content, readErr := os.ReadFile(inputFile)
+	require.NoError(t, readErr)
+	assert.Equal(t, inputCode, string(content))
+}
