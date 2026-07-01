@@ -16,6 +16,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   through the embedded `withCallStack`, so both wrapper types report a stack
   trace to Sentry.
 
+### Fixed
+
+- Call-stack file paths are now rendered in a checkout-independent import-path
+  form (e.g. `github.com/domonda/go-errs/format.go`), reconstructed from each
+  frame's package instead of matching the literal string `github.com` in the
+  build path. Previously, a module checked out under a path that did not
+  contain `github.com` leaked absolute build paths into error messages.
+  `TrimFilePathPrefix` now defaults to `""` and, when set, still trims the raw
+  runtime path as before.
+
 ## [v1.0.3] - 2026-04-16
 
 ### Fixed

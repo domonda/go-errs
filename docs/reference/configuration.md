@@ -28,19 +28,24 @@ var TrimFilePathPrefix string
 ```
 
 A prefix trimmed from the start of every file path shown in a rendered call
-stack. It defaults to the `.../src/` portion of the build environment path
-(everything up to `github.com` in this package's own source path), or is empty
-when the binary was built with `-trimpath` or lives outside a `github.com`
-path.
+stack.
 
-Set it to shorten stack paths to something repo-relative:
+It is empty by default. With an empty prefix, call-stack file paths are shown in
+a checkout-independent import-path form (for example
+`github.com/domonda/go-errs/format.go`), reconstructed from each frame's package
+rather than the local filesystem path. That output is identical no matter where
+the module is checked out, whether it lives under `$GOPATH/src`, was built with
+`-trimpath`, or sits in an arbitrary directory.
+
+Set it to a non-empty prefix to instead trim that exact prefix from the raw
+runtime file path (the pre-v1.0.4 behavior):
 
 ```go
 errs.TrimFilePathPrefix = "/go/src/"
 ```
 
 **Type:** `string`
-**Default:** build-environment `src` prefix, or `""`
+**Default:** `""` (checkout-independent import-path form)
 
 ---
 
