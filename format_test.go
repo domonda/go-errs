@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -736,4 +737,58 @@ func TestFormatParamMaxLen_VeryLargeLimit(t *testing.T) {
 	assert.Contains(t, result, "testFunc(")
 	assert.Contains(t, result, moderateString)
 	assert.NotContains(t, result, "TRUNCATED")
+}
+
+func TestFuncPackagePath(t *testing.T) {
+	tests := []struct {
+		fn   string
+		want string
+	}{
+		{"github.com/domonda/go-errs.funcC", "github.com/domonda/go-errs"},
+		{"github.com/domonda/go-errs.(*withCallStack).Error", "github.com/domonda/go-errs"},
+		{"github.com/domonda/go-errs.New.func1", "github.com/domonda/go-errs"},
+		{"github.com/domonda/go-errs/cmd/go-errs-wrap/rewrite.Run", "github.com/domonda/go-errs/cmd/go-errs-wrap/rewrite"},
+		{"main.run", "main"},
+		{"strings.Split", "strings"},
+		{"github.com/foo/bar.baz", "github.com/foo/bar"},
+		{"noPackagePathHere", ""},
+	}
+	for _, tt := range tests {
+		assert.Equalf(t, tt.want, funcPackagePath(tt.fn), "funcPackagePath(%q)", tt.fn)
+	}
+}
+
+func TestCallStackFilePath(t *testing.T) {
+	// Restore the global override after the test.
+	defer func(prev string) { TrimFilePathPrefix = prev }(TrimFilePathPrefix)
+
+	const fn = "github.com/domonda/go-errs.funcC"
+	const want = "github.com/domonda/go-errs/wrapwithfuncparams_test.go"
+
+	// Default (empty prefix): an absolute build path is reconstructed into the
+	// checkout-independent import-path form.
+	TrimFilePathPrefix = ""
+	assert.Equal(t, want, callStackFilePath(runtime.Frame{
+		Function: fn,
+		File:     "/Users/somebody/conductor/workspaces/go-errs/san-diego/wrapwithfuncparams_test.go",
+	}), "absolute path reconstructed")
+
+	// A different absolute checkout path yields the SAME output.
+	assert.Equal(t, want, callStackFilePath(runtime.Frame{
+		Function: fn,
+		File:     "/home/runner/work/go-errs/go-errs/wrapwithfuncparams_test.go",
+	}), "checkout-independent")
+
+	// An already-relative path (built with -trimpath) is used as-is.
+	assert.Equal(t, want, callStackFilePath(runtime.Frame{
+		Function: fn,
+		File:     "github.com/domonda/go-errs/wrapwithfuncparams_test.go",
+	}), "relative path used as-is")
+
+	// An explicit override trims the raw path (legacy behavior).
+	TrimFilePathPrefix = "/Users/somebody/go/src/"
+	assert.Equal(t, want, callStackFilePath(runtime.Frame{
+		Function: fn,
+		File:     "/Users/somebody/go/src/github.com/domonda/go-errs/wrapwithfuncparams_test.go",
+	}), "override trims prefix")
 }

@@ -1,17 +1,14 @@
 package errs
 
 import (
-	"go/build"
-	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 )
 
-func TestTrimFilePathPrefix(t *testing.T) {
-	goPath := build.Default.GOPATH
-	require.NotEmpty(t, goPath, "GOPATH")
-	// $GOPATH/src/
-	expected := filepath.Clean(goPath) + string(filepath.Separator) + "src" + string(filepath.Separator)
-	require.Equal(t, expected, TrimFilePathPrefix, "TrimFilePathPrefix")
+func TestTrimFilePathPrefix_DefaultEmpty(t *testing.T) {
+	// Empty by default: call-stack file-paths are shown in the
+	// checkout-independent import-path form (see callStackFilePath), so the
+	// output no longer depends on where the module is checked out.
+	require.Equal(t, "", TrimFilePathPrefix, "TrimFilePathPrefix default")
 }
