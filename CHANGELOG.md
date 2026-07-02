@@ -5,7 +5,7 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [v1.0.4] - unreleased
+## [v1.0.4] - 2026-07-02
 
 ### Added
 
@@ -49,7 +49,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Initial stable release.
 
-[v1.0.4]: https://github.com/domonda/go-errs/compare/v1.0.3...HEAD
+[v1.0.4]: https://github.com/domonda/go-errs/compare/v1.0.3...v1.0.4
 [v1.0.3]: https://github.com/domonda/go-errs/compare/v1.0.2...v1.0.3
 [v1.0.2]: https://github.com/domonda/go-errs/compare/v1.0.1...v1.0.2
 [v1.0.1]: https://github.com/domonda/go-errs/compare/v1.0.0...v1.0.1
