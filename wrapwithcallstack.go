@@ -21,6 +21,7 @@ package errs
 import (
 	"fmt"
 	"runtime"
+	"slices"
 )
 
 // New returns a new error with the passed text
@@ -89,8 +90,9 @@ type callStackProvider interface {
 }
 
 var (
-	_ error             = &withCallStack{}
-	_ callStackProvider = &withCallStack{}
+	_ error                               = &withCallStack{}
+	_ callStackProvider                   = &withCallStack{}
+	_ interface{ StackTrace() []uintptr } = &withCallStack{}
 )
 
 // withCallStack is an error wrapper that implements callStackProvider
@@ -109,6 +111,31 @@ func (w *withCallStack) Unwrap() error {
 
 func (w *withCallStack) CallStack() []uintptr {
 	return w.callStack
+}
+
+// StackTrace returns the program counters of the captured call stack,
+// ordered innermost first as returned by runtime.Callers.
+//
+// The method exists purely for interoperability with Sentry and other
+// tools that discover an error's stack trace through reflection instead
+// of a shared interface. sentry-go's ExtractStacktrace probes the error's
+// concrete type for a method named StackFrames, StackTrace, or
+// GetStackTracer (the pkg/errors, go-errors/errors, and pingcap/errors
+// conventions) and reads program counters from the returned slice,
+// accepting either a bare uintptr element or a struct with a
+// ProgramCounter or PC field. Returning []uintptr under the pkg/errors
+// StackTrace name satisfies that probe without importing any of those
+// packages.
+//
+// Because withCallStackFuncParams embeds withCallStack, this method is
+// promoted to it as well, so both wrapper types report a stack trace to
+// Sentry.
+//
+// The returned slice is a copy, matching the pkg/errors contract, so a
+// consumer that reorders it in place cannot corrupt the error's stored
+// call stack.
+func (w *withCallStack) StackTrace() []uintptr {
+	return slices.Clone(w.callStack)
 }
 
 func callStack(skip int) []uintptr {

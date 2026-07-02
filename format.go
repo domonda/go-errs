@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"runtime"
 	"strings"
 )
@@ -76,7 +77,7 @@ func formatCallStack(e callStackProvider) string {
 	return fmt.Sprintf(
 		"%s\n    %s:%d",
 		frame.Function,
-		strings.TrimPrefix(frame.File, TrimFilePathPrefix),
+		callStackFilePath(frame),
 		frame.Line,
 	)
 }
@@ -87,9 +88,51 @@ func formatCallStackParams(e callStackParamsProvider) string {
 	return fmt.Sprintf(
 		"%s\n    %s:%d",
 		FormatFunctionCall(frame.Function, params...),
-		strings.TrimPrefix(frame.File, TrimFilePathPrefix),
+		callStackFilePath(frame),
 		frame.Line,
 	)
+}
+
+// callStackFilePath returns the source file path to display for a stack frame.
+//
+// If [TrimFilePathPrefix] is set it is trimmed from the raw runtime file-path
+// (legacy behavior). Otherwise the path is returned in a checkout-independent
+// import-path form: a file-path that is already relative (built with -trimpath)
+// is used as-is, while an absolute build path is reconstructed from the frame's
+// package import path (always carried by frame.Function) and the file's base
+// name. That makes the output identical no matter where the module is checked
+// out.
+func callStackFilePath(frame runtime.Frame) string {
+	file := frame.File
+	if TrimFilePathPrefix != "" {
+		return strings.TrimPrefix(file, TrimFilePathPrefix)
+	}
+	if file == "" || !filepath.IsAbs(file) {
+		return file
+	}
+	pkg := funcPackagePath(frame.Function)
+	if pkg == "" {
+		return file
+	}
+	return pkg + "/" + filepath.Base(file)
+}
+
+// funcPackagePath extracts the package import path from a fully-qualified
+// function name as reported by [runtime.Frame.Function], for example
+// "github.com/domonda/go-errs.funcC"        -> "github.com/domonda/go-errs"
+// "github.com/domonda/go-errs.(*T).Method"  -> "github.com/domonda/go-errs"
+// "github.com/domonda/go-errs.New.func1"    -> "github.com/domonda/go-errs"
+//
+// The package path is everything before the first '.' that follows the last
+// '/', because the final import-path element (the package directory name) never
+// contains a '.'. Returns "" if fn carries no package path.
+func funcPackagePath(fn string) string {
+	lastSlash := strings.LastIndexByte(fn, '/')
+	dot := strings.IndexByte(fn[lastSlash+1:], '.')
+	if dot < 0 {
+		return ""
+	}
+	return fn[:lastSlash+1+dot]
 }
 
 // FormatFunctionCall formats a function call in pseudo syntax

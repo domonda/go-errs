@@ -15,6 +15,17 @@ Go error wrapping with call-stack and function parameter capture.
 - **Helper utilities** - Common patterns for NotFound errors, context errors, and panic recovery
 - **Customizable formatting** - Control how sensitive data appears in error messages
 - **Iterator support** - Convert errors to `iter.Seq` and `iter.Seq2` iterators
+- **Sentry stack traces** - Wrapped errors expose their call stack to `sentry-go` out of the box, no extra glue code
+
+## Documentation
+
+Full structured documentation lives in [`docs/`](docs/README.md), organized with
+the [Diataxis](https://diataxis.fr) framework:
+
+- **Tutorial** — [Getting started](docs/tutorials/getting-started.md): install to a real multi-frame error trace
+- **How-to guides** — [wrap with parameters](docs/how-to/wrap-errors-with-function-parameters.md), [redact secrets](docs/how-to/redact-sensitive-parameters.md), [not-found & context errors](docs/how-to/handle-not-found-and-context-errors.md), [recover panics](docs/how-to/recover-panics-as-errors.md), [Sentry](docs/how-to/send-stack-traces-to-sentry.md), [the go-errs-wrap CLI](docs/how-to/manage-wrapping-with-go-errs-wrap.md)
+- **Reference** — [package API](docs/reference/api.md), [configuration](docs/reference/configuration.md), [go-errs-wrap CLI](docs/reference/go-errs-wrap.md)
+- **Explanation** — [call stacks & wrapper types](docs/explanation/call-stacks-and-wrapper-types.md), [Sentry interop](docs/explanation/sentry-stack-trace-interop.md), [secret redaction](docs/explanation/secret-redaction-and-pretty-printing.md)
 
 ## Installation
 
@@ -643,6 +654,22 @@ This is preferable to omitting sensitive parameters entirely, as omitted paramet
 - **Go version:** Requires Go 1.24+
 - **Error handling:** Fully compatible with `errors.Is`, `errors.As`, `errors.Unwrap`, and `errors.Join`
 - **Testing:** Use with `testify` or any testing framework
+- **Sentry:** Errors wrapped with a call stack are recognized by `sentry-go` (see below)
+
+### Sentry stack traces
+
+Errors wrapped by this package (via `New`, `Errorf`, `WrapWithCallStack`,
+`WrapWithFuncParams`, and friends) expose a `StackTrace() []uintptr` method.
+`sentry-go`'s `sentry.ExtractStacktrace` discovers an error's stack trace by
+reflecting on its concrete type and calling a method named `StackFrames`,
+`StackTrace`, or `GetStackTracer` — the `go-errors/errors`, `pkg/errors`, and
+`pingcap/errors` conventions. By exposing `StackTrace` returning the raw
+program counters (the `pkg/errors` shape), the wrapped errors are picked up
+automatically with no import of, or dependency on, `sentry-go` or `pkg/errors`:
+
+```go
+hub.CaptureException(err) // err's call stack shows up in the Sentry event
+```
 
 ## Performance
 
