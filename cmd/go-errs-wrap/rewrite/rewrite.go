@@ -236,7 +236,7 @@ func processSingleFileWithOutput(sourcePath, outPath string, minVariadic, valida
 					}
 				} else {
 					// For replace/insert, format with imports to ensure errs is imported
-					rewritten, err = astvisit.FormatFileWithImports(fset, rewritten, imports)
+					rewritten, err = astvisit.FormatSource(rewritten, imports)
 					if err != nil {
 						return nil, nil, err
 					}
@@ -342,7 +342,7 @@ func processDirectoryWithOutput(sourcePath, outPath string, recursive, minVariad
 					}
 				} else {
 					// For replace/insert, format with imports to ensure errs is imported
-					rewritten, err = astvisit.FormatFileWithImports(fset, rewritten, imports)
+					rewritten, err = astvisit.FormatSource(rewritten, imports)
 					if err != nil {
 						return nil, nil, err
 					}
@@ -444,7 +444,7 @@ func processFile(fset *token.FileSet, astFile *ast.File, minVariadic bool, verbo
 				fmt.Fprintf(verboseOut, "%s: replacing defer errs.Wrap with %s\n", fset.Position(deferStmt.Pos()), replacement)
 			}
 			replacements.AddReplacement(deferStmt, replacement, "replace defer errs.Wrap")
-			imports[`"github.com/domonda/go-errs"`] = struct{}{}
+			imports.Add("github.com/domonda/go-errs")
 
 			return true
 		})
@@ -490,7 +490,7 @@ func processFile(fset *token.FileSet, astFile *ast.File, minVariadic bool, verbo
 					fmt.Fprintf(verboseOut, "%s: replacing //#wrap-result-err with %s\n", fset.Position(comment.Pos()), replacement)
 				}
 				replacements.AddReplacement(comment, replacement, "replace //#wrap-result-err")
-				imports[`"github.com/domonda/go-errs"`] = struct{}{}
+				imports.Add("github.com/domonda/go-errs")
 			}
 		}
 	}
@@ -548,7 +548,7 @@ func processFile(fset *token.FileSet, astFile *ast.File, minVariadic bool, verbo
 				}
 				// Use PosNode to create a zero-width insertion point
 				replacements.AddReplacement(astvisit.PosNode(insertPos), "\n\t"+statement+"\n", "insert defer errs.Wrap")
-				imports[`"github.com/domonda/go-errs"`] = struct{}{}
+				imports.Add("github.com/domonda/go-errs")
 			} else {
 				// Insert before the first statement, with empty line after
 				firstStmt := funcBody.List[0]
@@ -557,7 +557,7 @@ func processFile(fset *token.FileSet, astFile *ast.File, minVariadic bool, verbo
 				}
 				// Use PosNode to create a zero-width insertion point before the first statement
 				replacements.AddReplacement(astvisit.PosNode(firstStmt.Pos()), statement+"\n\n\t", "insert defer errs.Wrap")
-				imports[`"github.com/domonda/go-errs"`] = struct{}{}
+				imports.Add("github.com/domonda/go-errs")
 			}
 
 			return true

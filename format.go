@@ -178,6 +178,6 @@ var FormatFunctionCall = func(function string, params ...any) string {
 // This is useful for logging function calls with their parameters for debugging.
 func LogFunctionCall(logger Logger, function string, params ...any) {
 	if logger != nil {
-		logger.Printf(FormatFunctionCall(function, params...))
+		logger.Printf("%s", FormatFunctionCall(function, params...))
 	}
 }

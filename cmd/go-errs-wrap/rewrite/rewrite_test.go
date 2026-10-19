@@ -11,6 +11,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/ungerik/go-astvisit"
 )
 
 func TestIsDeferErrsWrap(t *testing.T) {
@@ -453,7 +454,7 @@ func Outer(a int) (err error) {
 
 	// Should have one replacement for the anonymous function
 	assert.Len(t, replacements, 1)
-	assert.Contains(t, imports, `"github.com/domonda/go-errs"`)
+	assert.Contains(t, imports, astvisit.Import{Path: "github.com/domonda/go-errs"})
 }
 
 func TestCopyFile(t *testing.T) {
