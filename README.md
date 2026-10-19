@@ -536,9 +536,18 @@ The `go-errs-wrap` command-line tool helps manage `defer errs.WrapWithFuncParams
 
 ### Installation
 
+Add the tool to your module, together with the latest `go-errs`:
+
 ```bash
-go install github.com/domonda/go-errs/cmd/go-errs-wrap@latest
+go get -tool github.com/domonda/go-errs/cmd/go-errs-wrap@latest github.com/domonda/go-errs@latest
 ```
+
+Run it with `go tool go-errs-wrap`, or install the `go-errs-wrap` binary
+from within your module with `go install github.com/domonda/go-errs/cmd/go-errs-wrap`.
+`go install github.com/domonda/go-errs/cmd/go-errs-wrap@latest` does not work:
+the tool's module replaces `go-errs` with its local checkout.
+`go-errs` versions up to v1.0.4 still contain the tool's packages,
+which is why `go get -tool` also needs `github.com/domonda/go-errs@latest`.
 
 ### Commands
 
@@ -651,7 +660,7 @@ This is preferable to omitting sensitive parameters entirely, as omitted paramet
 
 ## Compatibility
 
-- **Go version:** Requires Go 1.24+
+- **Go version:** Requires Go 1.26+
 - **Error handling:** Fully compatible with `errors.Is`, `errors.As`, `errors.Unwrap`, and `errors.Join`
 - **Testing:** Use with `testify` or any testing framework
 - **Sentry:** Errors wrapped with a call stack are recognized by `sentry-go` (see below)

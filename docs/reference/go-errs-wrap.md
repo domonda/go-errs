@@ -7,9 +7,18 @@ parameters, or insert them into functions that lack one.
 
 ## Installation
 
+Add the tool to your module, together with the latest `go-errs`:
+
 ```bash
-go install github.com/domonda/go-errs/cmd/go-errs-wrap@latest
+go get -tool github.com/domonda/go-errs/cmd/go-errs-wrap@latest github.com/domonda/go-errs@latest
 ```
+
+Run it with `go tool go-errs-wrap`, or install the `go-errs-wrap` binary
+from within your module with `go install github.com/domonda/go-errs/cmd/go-errs-wrap`.
+`go install github.com/domonda/go-errs/cmd/go-errs-wrap@latest` does not work:
+the tool's module replaces `go-errs` with its local checkout.
+`go-errs` versions up to v1.0.4 still contain the tool's packages,
+which is why `go get -tool` also needs `github.com/domonda/go-errs@latest`.
 
 ## Synopsis
 

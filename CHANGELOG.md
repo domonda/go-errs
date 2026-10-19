@@ -9,8 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Requires Go 1.26 instead of Go 1.24, like `github.com/ungerik/go-astvisit`
-  `v0.0.0-20261013080339-68c5a526b805` and `golang.org/x/tools` v0.52.0.
+- `go-errs-wrap` is its own module `github.com/domonda/go-errs/cmd/go-errs-wrap`,
+  so the `go-errs` module no longer depends on `github.com/ungerik/go-astvisit`
+  and `golang.org/x/tools`. Because the tool's module replaces `go-errs` with
+  its local checkout, `go install github.com/domonda/go-errs/cmd/go-errs-wrap@latest`
+  no longer works. Add the tool with
+  `go get -tool github.com/domonda/go-errs/cmd/go-errs-wrap@latest github.com/domonda/go-errs@latest`
+  instead: `go-errs` versions up to v1.0.4 still contain the tool's packages.
+- Requires Go 1.26 instead of Go 1.24, for all modules.
 
 ### Fixed
 

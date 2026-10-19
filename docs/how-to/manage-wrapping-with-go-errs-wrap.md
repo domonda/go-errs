@@ -5,11 +5,13 @@ mechanically instead of by hand, and enforce their presence in CI.
 
 ## Prerequisites
 
-- Go 1.24 or newer.
-- The tool installed:
+- Go 1.26 or newer.
+- The tool added to your module and its `go-errs-wrap` binary installed
+  (see [Installation](../reference/go-errs-wrap.md#installation)):
 
   ```bash
-  go install github.com/domonda/go-errs/cmd/go-errs-wrap@latest
+  go get -tool github.com/domonda/go-errs/cmd/go-errs-wrap@latest github.com/domonda/go-errs@latest
+  go install github.com/domonda/go-errs/cmd/go-errs-wrap
   ```
 
 - A version-controlled working tree — these commands rewrite files in place by

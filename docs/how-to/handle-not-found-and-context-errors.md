@@ -6,7 +6,7 @@ uniformly, including the standard-library variants, without scattering
 
 ## Prerequisites
 
-- Go 1.24 or newer, with `github.com/domonda/go-errs` installed.
+- Go 1.26 or newer, with `github.com/domonda/go-errs` installed.
 
 ## Not-found errors
 
