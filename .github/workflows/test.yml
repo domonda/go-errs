@@ -1,0 +1,35 @@
+name: Test
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    branches:
+      - master
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    # go test ./... in the repository root does not include the packages
+    # of the go-errs-wrap module, so every module is tested on its own
+    # and without go.work, like it is built by the modules using it
+    strategy:
+      matrix:
+        module:
+          - .
+          - cmd/go-errs-wrap
+    env:
+      GOWORK: "off"
+    defaults:
+      run:
+        working-directory: ${{ matrix.module }}
+    steps:
+      - name: Checkout Source
+        uses: actions/checkout@v6
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: ${{ matrix.module }}/go.mod
+      - name: Vet
+        run: go vet ./...
+      - name: Test
+        run: go test ./...
