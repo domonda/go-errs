@@ -5,8 +5,11 @@ package rewrite
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"go/ast"
+	"go/format"
+	"go/parser"
 	"go/token"
 	"io"
 	"os"
@@ -14,7 +17,7 @@ import (
 	"strings"
 
 	"github.com/ungerik/go-astvisit"
-	goimports "golang.org/x/tools/imports"
+	"golang.org/x/tools/go/ast/astutil"
 
 	"github.com/domonda/go-errs"
 )
@@ -91,38 +94,79 @@ func process(sourcePath, outPath string, recursive, minVariadic, validate bool, 
 		return err
 	}
 
-	// Handle output path for directory when not in validate mode
-	if outPath != "" && !validate {
-		outPath, err = filepath.Abs(outPath)
-		if err != nil {
-			return err
-		}
-
-		if sourceInfo.IsDir() {
-			return processDirectoryWithOutput(sourcePath, outPath, recursive, minVariadic, validate, verboseOut, mode)
-		}
-
-		// For single file with output, use custom handling
-		return processSingleFileWithOutput(sourcePath, outPath, minVariadic, validate, verboseOut, mode)
-	}
-
-	// In-place modification (or validation)
 	// Use "..." suffix for directories to recursively find all packages
 	path := sourcePath
 	if sourceInfo.IsDir() && recursive {
 		path = strings.TrimSuffix(sourcePath, "/") + "/..."
 	}
 
-	var validationErrors []string
-	err = astvisit.RewriteWithReplacements(
-		path,
-		verboseOut,
-		nil, // modify in place (or skip in validation mode)
-		false,
-		func(fset *token.FileSet, _ *ast.Package, astFile *ast.File, filePath string, verboseOut io.Writer) (astvisit.NodeReplacements, astvisit.Imports, error) {
-			replacements, imports, err := processFile(fset, astFile, minVariadic, verboseOut, mode)
-			if err != nil || len(replacements) == 0 {
-				return nil, nil, err
+	if validate {
+		// Collect the missing changes without modifying files, outPath is ignored
+		var validationErrors []string
+		_, err = astvisit.RewriteDryRun(path, verboseOut, packageRewriter(minVariadic, mode, verboseOut, &validationErrors))
+		if err != nil {
+			return err
+		}
+		if len(validationErrors) > 0 {
+			for _, errMsg := range validationErrors {
+				fmt.Fprintln(os.Stderr, errMsg)
+			}
+			return errs.Errorf("found %d missing error wrapper(s)", len(validationErrors))
+		}
+		return nil
+	}
+
+	if outPath == "" {
+		// astvisit writes only the changed files of a package
+		// after all of them were rewritten, keeping their line endings
+		return astvisit.RewritePackages(path, verboseOut, nil, packageRewriter(minVariadic, mode, verboseOut, nil))
+	}
+
+	outPath, err = filepath.Abs(outPath)
+	if err != nil {
+		return err
+	}
+	// Copying the source directory into itself or one of its parents
+	// would overwrite source files
+	if sourceInfo.IsDir() && isWithin(resolvePath(sourcePath), resolvePath(outPath)) {
+		return errs.Errorf("output path %s must not contain the source directory %s", outPath, sourcePath)
+	}
+
+	// Rewrite all files before writing any output,
+	// so an error doesn't leave a partially written output
+	rewritten := make(map[string][]byte)
+	rewritePackage := packageRewriter(minVariadic, mode, verboseOut, nil)
+	_, err = astvisit.RewriteDryRun(path, nil, func(pkg *astvisit.ParsedPackage, verboseOut io.Writer) (map[string][]byte, error) {
+		sources, err := rewritePackage(pkg, verboseOut)
+		if err != nil {
+			return nil, err
+		}
+		for filePath, source := range sources {
+			rewritten[filePath] = withLineEndingsOf(source, pkg.Sources[filePath])
+		}
+		return sources, nil
+	})
+	if err != nil {
+		return err
+	}
+
+	if sourceInfo.IsDir() {
+		return writeDirectoryOutput(sourcePath, outPath, recursive, rewritten, verboseOut)
+	}
+	return writeFileOutput(sourcePath, outPath, rewritten[sourcePath], verboseOut)
+}
+
+// packageRewriter returns the astvisit.RewritePackageFunc that rewrites
+// the files of a package. If validationErrors is not nil, no file is rewritten,
+// instead the missing changes are appended to validationErrors.
+func packageRewriter(minVariadic bool, mode processMode, verboseOut io.Writer, validationErrors *[]string) astvisit.RewritePackageFunc {
+	return func(pkg *astvisit.ParsedPackage, _ io.Writer) (map[string][]byte, error) {
+		rewritten := make(map[string][]byte)
+		for _, filePath := range pkg.FilePaths {
+			source := pkg.Sources[filePath]
+			replacements, imports, err := processFile(pkg.Fset, pkg.Files[filePath], minVariadic, verboseOut, mode)
+			if err != nil {
+				return nil, err
 			}
 
 			// Filter out no-op replacements: a replacement that produces the
@@ -133,228 +177,238 @@ func process(sourcePath, outPath string, recursive, minVariadic, validate bool, 
 			//     positives caused by unrelated formatting differences
 			//   - normal mode does not rewrite a file (and reorder its
 			//     imports) when every wrap statement is already correct
-			// #nosec G304 -- filePath comes from astvisit callback and is validated via filepath.Rel
-			source, err := os.ReadFile(filePath)
-			if err != nil {
-				return nil, nil, err
-			}
 			filtered := replacements[:0]
 			for _, repl := range replacements {
-				if repl.Node != nil && !replacementChangesSource(fset, source, repl) {
+				if repl.Node != nil && !replacementChangesSource(pkg.Fset, source, repl) {
 					continue
 				}
 				filtered = append(filtered, repl)
 			}
-			replacements = filtered
+			if len(filtered) == 0 {
+				continue
+			}
 
-			if validate {
-				for _, repl := range replacements {
+			if validationErrors != nil {
+				for _, repl := range filtered {
 					var pos token.Position
 					if repl.Node != nil {
-						pos = fset.Position(repl.Node.Pos())
+						pos = pkg.Fset.Position(repl.Node.Pos())
 					}
 					desc := repl.DebugID
 					if desc == "" {
 						desc = "error wrapper"
 					}
-					validationErrors = append(validationErrors, fmt.Sprintf("%s: missing %s", pos, desc))
+					*validationErrors = append(*validationErrors, fmt.Sprintf("%s: missing %s", pos, desc))
 				}
-
-				// Return nil to prevent file modification in validate mode
-				return nil, nil, nil
+				continue
 			}
 
-			if mode == modeRemove && len(replacements) > 0 {
-				// Write the file here because only goimports removes the
-				// go-errs import that is unused after removing the statements,
-				// astvisit would format the file without removing imports
-				rewritten, err := rewriteSource(fset, filePath, source, replacements, imports, mode)
-				if err != nil {
-					return nil, nil, err
-				}
-				// #nosec G703 -- filePath comes from astvisit callback, the existing file keeps its permissions
-				err = os.WriteFile(filePath, rewritten, 0600)
-				if err != nil {
-					return nil, nil, err
-				}
-				if verboseOut != nil {
-					fmt.Fprintf(verboseOut, "wrote: %s\n", filePath)
-				}
-				return nil, nil, nil
+			rewritten[filePath], err = rewriteSource(pkg.Fset, filePath, source, filtered, imports, mode)
+			if err != nil {
+				return nil, err
 			}
-
-			return replacements, imports, nil
-		},
-	)
-	if err != nil {
-		return err
-	}
-
-	// In validation mode, report errors and fail if any were found
-	if validate && len(validationErrors) > 0 {
-		for _, errMsg := range validationErrors {
-			fmt.Fprintln(os.Stderr, errMsg)
 		}
-		return errs.Errorf("found %d missing error wrapper(s)", len(validationErrors))
+		return rewritten, nil
 	}
-
-	return nil
 }
 
-func processSingleFileWithOutput(sourcePath, outPath string, minVariadic, validate bool, verboseOut io.Writer, mode processMode) (err error) {
-	defer errs.WrapWithFuncParams(&err, sourcePath, outPath, minVariadic, validate, verboseOut, mode)
-
-	// Determine final output path
-	outInfo, err := os.Stat(outPath)
-	if err == nil && outInfo.IsDir() {
-		// Output is existing directory, add source filename
-		outPath = filepath.Join(outPath, filepath.Base(sourcePath))
-	} else if !strings.HasSuffix(outPath, ".go") {
-		// If outPath doesn't exist and doesn't end with .go,
-		// treat it as a directory to create
-		if err := os.MkdirAll(outPath, 0750); err != nil {
-			return err
-		}
-		outPath = filepath.Join(outPath, filepath.Base(sourcePath))
-	}
-
-	// Process the file
-	return astvisit.RewriteWithReplacements(
-		sourcePath,
-		verboseOut,
-		nil, // We handle output ourselves
-		false,
-		func(fset *token.FileSet, pkg *ast.Package, astFile *ast.File, filePath string, verboseOut io.Writer) (astvisit.NodeReplacements, astvisit.Imports, error) {
-			replacements, imports, err := processFile(fset, astFile, minVariadic, verboseOut, mode)
-			if err != nil {
-				return nil, nil, err
-			}
-
-			// Read original source
-			// #nosec G304 -- filePath comes from astvisit callback and is validated via filepath.Rel
-			source, err := os.ReadFile(filePath)
-			if err != nil {
-				return nil, nil, err
-			}
-
-			// No changes copy the original
-			rewritten := source
-			if len(replacements) > 0 {
-				rewritten, err = rewriteSource(fset, filePath, source, replacements, imports, mode)
-				if err != nil {
-					return nil, nil, err
-				}
-			}
-
-			// Write to output
-			// #nosec G306,G703 -- 0640 is appropriate for generated Go source files, paths are constructed via filepath.Join
-			if err := os.WriteFile(outPath, rewritten, 0640); err != nil {
-				return nil, nil, err
-			}
-
-			if verboseOut != nil {
-				fmt.Fprintf(verboseOut, "wrote: %s\n", outPath)
-			}
-
-			// Return nil to prevent astvisit from writing
-			return nil, nil, nil
-		},
-	)
-}
-
-func processDirectoryWithOutput(sourcePath, outPath string, recursive, minVariadic, validate bool, verboseOut io.Writer, mode processMode) (err error) {
-	defer errs.WrapWithFuncParams(&err, sourcePath, outPath, recursive, minVariadic, validate, verboseOut, mode)
-
-	// First copy the directory tree, or without recursion only the files
-	// directly in sourcePath, so the output also contains the files
-	// that are not rewritten
-	err = filepath.Walk(sourcePath, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-
-		relPath, err := filepath.Rel(sourcePath, path)
-		if err != nil {
-			return err
-		}
-		destPath := filepath.Join(outPath, relPath)
-
-		if info.IsDir() {
-			if !recursive && path != sourcePath {
-				return filepath.SkipDir
-			}
-			return os.MkdirAll(destPath, info.Mode())
-		}
-
-		if verboseOut != nil {
-			fmt.Fprintf(verboseOut, "copying: %s -> %s\n", path, destPath)
-		}
-		return copyFile(path, destPath)
-	})
-	if err != nil {
-		return err
-	}
-
-	// Then overwrite the copies of the Go files that have replacements
-	path := sourcePath
-	if recursive {
-		path = strings.TrimSuffix(sourcePath, "/") + "/..."
-	}
-	return astvisit.RewriteWithReplacements(
-		path,
-		verboseOut,
-		nil, // We'll handle output ourselves
-		false,
-		func(fset *token.FileSet, pkg *ast.Package, astFile *ast.File, filePath string, verboseOut io.Writer) (astvisit.NodeReplacements, astvisit.Imports, error) {
-			replacements, imports, err := processFile(fset, astFile, minVariadic, verboseOut, mode)
-			if err != nil || len(replacements) == 0 {
-				return nil, nil, err
-			}
-
-			relPath, err := filepath.Rel(sourcePath, filePath)
-			if err != nil {
-				return nil, nil, err
-			}
-			destPath := filepath.Join(outPath, relPath)
-
-			// #nosec G304 -- filePath comes from astvisit callback and is validated via filepath.Rel above
-			source, err := os.ReadFile(filePath)
-			if err != nil {
-				return nil, nil, err
-			}
-
-			rewritten, err := rewriteSource(fset, filePath, source, replacements, imports, mode)
-			if err != nil {
-				return nil, nil, err
-			}
-
-			// #nosec G306,G703 -- 0640 is appropriate for generated Go source files, paths are constructed via filepath.Join
-			if err := os.WriteFile(destPath, rewritten, 0640); err != nil {
-				return nil, nil, err
-			}
-
-			if verboseOut != nil {
-				fmt.Fprintf(verboseOut, "wrote: %s\n", destPath)
-			}
-
-			// Return nil to prevent astvisit from writing
-			return nil, nil, nil
-		},
-	)
-}
-
-// rewriteSource returns the source of filePath with replacements applied.
-// For remove, goimports drops the imports that became unused,
-// for replace and insert the source is formatted with imports added.
+// rewriteSource returns source of filePath with replacements applied
+// and formatted like gofmt. For remove, a go-errs import that is not used
+// anymore is removed, for replace and insert the missing imports are added.
 func rewriteSource(fset *token.FileSet, filePath string, source []byte, replacements astvisit.NodeReplacements, imports astvisit.Imports, mode processMode) ([]byte, error) {
 	rewritten, err := replacements.Apply(fset, source)
 	if err != nil {
 		return nil, err
 	}
 	if mode == modeRemove {
-		return goimports.Process(filePath, rewritten, nil)
+		return removeUnusedErrsImports(filePath, rewritten)
 	}
 	return astvisit.FormatSource(rewritten, imports)
+}
+
+// removeUnusedErrsImports removes the imports of go-errs from source
+// whose package name is not used anymore and formats it like gofmt.
+// Other imports are kept unchanged.
+func removeUnusedErrsImports(filePath string, source []byte) ([]byte, error) {
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, filePath, source, parser.ParseComments)
+	if err != nil {
+		return nil, err
+	}
+
+	// A selector on an identifier that the parser could not resolve
+	// to a declaration of the file uses an imported package
+	usedPackages := make(map[string]bool)
+	ast.Inspect(file, func(n ast.Node) bool {
+		if sel, ok := n.(*ast.SelectorExpr); ok {
+			if ident, ok := sel.X.(*ast.Ident); ok && ident.Obj == nil {
+				usedPackages[ident.Name] = true
+			}
+		}
+		return true
+	})
+
+	var unusedNames []string
+	for _, imp := range file.Imports {
+		if imp.Path.Value != errsImportPath {
+			continue
+		}
+		switch {
+		case imp.Name == nil:
+			if !usedPackages["errs"] {
+				unusedNames = append(unusedNames, "")
+			}
+		case imp.Name.Name != "_" && imp.Name.Name != "." && !usedPackages[imp.Name.Name]:
+			unusedNames = append(unusedNames, imp.Name.Name)
+		}
+	}
+	for _, name := range unusedNames {
+		astutil.DeleteNamedImport(fset, file, name, strings.Trim(errsImportPath, `"`))
+	}
+
+	var buf bytes.Buffer
+	err = format.Node(&buf, fset, file)
+	if err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
+// withLineEndingsOf returns source with the line endings (LF or CRLF)
+// of the first line of original, like astvisit writes rewritten files.
+func withLineEndingsOf(source, original []byte) []byte {
+	source = bytes.ReplaceAll(source, []byte("\r\n"), []byte("\n"))
+	if i := bytes.IndexByte(original, '\n'); i > 0 && original[i-1] == '\r' {
+		source = bytes.ReplaceAll(source, []byte("\n"), []byte("\r\n"))
+	}
+	return source
+}
+
+// writeFileOutput writes the rewritten source of sourceFile,
+// or its unchanged source if rewritten is nil, to outPath.
+// If outPath is an existing directory or doesn't end with .go,
+// the file is written with the name of sourceFile into that directory,
+// which is created if missing.
+func writeFileOutput(sourceFile, outPath string, rewritten []byte, verboseOut io.Writer) error {
+	outInfo, err := os.Stat(outPath)
+	if err == nil && outInfo.IsDir() {
+		outPath = filepath.Join(outPath, filepath.Base(sourceFile))
+	} else if !strings.HasSuffix(outPath, ".go") {
+		err = os.MkdirAll(outPath, 0750)
+		if err != nil {
+			return err
+		}
+		outPath = filepath.Join(outPath, filepath.Base(sourceFile))
+	}
+
+	if rewritten == nil {
+		// #nosec G304 -- sourceFile is the file path passed by the user
+		rewritten, err = os.ReadFile(sourceFile)
+		if err != nil {
+			return err
+		}
+	}
+	// #nosec G306,G703 -- 0640 is appropriate for generated Go source files, outPath is the path passed by the user
+	err = os.WriteFile(outPath, rewritten, 0640)
+	if err != nil {
+		return err
+	}
+	if verboseOut != nil {
+		fmt.Fprintf(verboseOut, "wrote: %s\n", outPath)
+	}
+	return nil
+}
+
+// writeDirectoryOutput copies the files below sourceDir, or without recursive
+// only the files directly in sourceDir, to outDir and writes the rewritten
+// sources instead of the original ones of the files in rewritten.
+// An outDir within sourceDir is not copied into itself.
+// Version control metadata and files that are not regular files
+// or symbolic links to regular files are not copied.
+// Copied files and directories are writable by the owner,
+// so that the output can be written again.
+func writeDirectoryOutput(sourceDir, outDir string, recursive bool, rewritten map[string][]byte, verboseOut io.Writer) error {
+	return filepath.Walk(sourceDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+
+		relPath, err := filepath.Rel(sourceDir, path)
+		if err != nil {
+			return err
+		}
+		destPath := filepath.Join(outDir, relPath)
+
+		if info.IsDir() {
+			if path != sourceDir && (!recursive || path == outDir || isVCSMetadata(info.Name())) {
+				return filepath.SkipDir
+			}
+			return os.MkdirAll(destPath, info.Mode().Perm()|0700)
+		}
+		if isVCSMetadata(info.Name()) {
+			// Like the .git file of a git worktree
+			return nil
+		}
+
+		if info.Mode()&os.ModeSymlink != 0 {
+			// Copy the file a symbolic link points to
+			info, err = os.Stat(path)
+			if err != nil || !info.Mode().IsRegular() {
+				if verboseOut != nil {
+					fmt.Fprintf(verboseOut, "skipping symbolic link: %s\n", path)
+				}
+				return nil
+			}
+		} else if !info.Mode().IsRegular() {
+			if verboseOut != nil {
+				fmt.Fprintf(verboseOut, "skipping irregular file: %s\n", path)
+			}
+			return nil
+		}
+
+		if source, ok := rewritten[path]; ok {
+			if verboseOut != nil {
+				fmt.Fprintf(verboseOut, "wrote: %s\n", destPath)
+			}
+			// #nosec G306,G703 -- the permissions of the source file, paths are constructed via filepath.Join
+			return os.WriteFile(destPath, source, info.Mode().Perm()|0200)
+		}
+		if verboseOut != nil {
+			fmt.Fprintf(verboseOut, "copying: %s -> %s\n", path, destPath)
+		}
+		return copyFile(path, destPath, info.Mode().Perm()|0200)
+	})
+}
+
+// isVCSMetadata reports whether a file or directory name
+// is the metadata of a version control system.
+func isVCSMetadata(name string) bool {
+	switch name {
+	case ".git", ".hg", ".svn":
+		return true
+	}
+	return false
+}
+
+// resolvePath returns the absolute path with all symbolic links of its
+// longest existing prefix evaluated, so that paths can be compared
+// even if path does not exist yet.
+func resolvePath(path string) string {
+	resolved, err := filepath.EvalSymlinks(path)
+	if err == nil {
+		return resolved
+	}
+	parent := filepath.Dir(path)
+	if parent == path {
+		return path
+	}
+	return filepath.Join(resolvePath(parent), filepath.Base(path))
+}
+
+// isWithin reports whether path equals dir or is below it.
+func isWithin(path, dir string) bool {
+	rel, err := filepath.Rel(dir, path)
+	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
 func processFile(fset *token.FileSet, astFile *ast.File, minVariadic bool, verboseOut io.Writer, mode processMode) (replacements astvisit.NodeReplacements, imports astvisit.Imports, err error) {
@@ -364,13 +418,22 @@ func processFile(fset *token.FileSet, astFile *ast.File, minVariadic bool, verbo
 
 	// Extract all aliases used to import go-errs (for detecting KeepSecret calls)
 	errsAliases := extractErrsAliases(astFile)
-	// Generated statements use the name of an existing import,
-	// the import is only added if the file does not have a usable one
-	errsName, errsImported := errsPackageName(astFile)
-	addErrsImport := func() {
-		if !errsImported {
-			imports.Add("github.com/domonda/go-errs")
+	// Generated statements use the name of an existing go-errs import.
+	// The import is added if the file has no usable one,
+	// or if a function declares a name that shadows the import name,
+	// unnamed or named goerrs if another package is imported as errs.
+	errsName := errsImportName(astFile)
+	addedErrsName := "errs"
+	if importsOtherErrsPackage(astFile) {
+		addedErrsName = "goerrs"
+	}
+	needErrsImport := false
+	errsNameAt := func(pos token.Pos) string {
+		if errsName == "" || (errsName != "errs" && isShadowedAt(astFile, pos, errsName)) {
+			needErrsImport = true
+			return addedErrsName
 		}
+		return errsName
 	}
 
 	// For insert mode, track which functions already have defer errs.Wrap
@@ -431,7 +494,7 @@ func processFile(fset *token.FileSet, astFile *ast.File, minVariadic bool, verbo
 			// Extract KeepSecret-wrapped parameters from the existing defer statement
 			// so they can be preserved in the replacement
 			fun.keepSecretNames = extractKeepSecretParams(deferStmt, errsAliases)
-			fun.errsName = errsName
+			fun.errsName = errsNameAt(deferStmt.Pos())
 
 			// If already using variadic WrapWithFuncParams and minVariadic is false, keep it variadic
 			var replacement string
@@ -445,7 +508,6 @@ func processFile(fset *token.FileSet, astFile *ast.File, minVariadic bool, verbo
 				fmt.Fprintf(verboseOut, "%s: replacing defer errs.Wrap with %s\n", fset.Position(deferStmt.Pos()), replacement)
 			}
 			replacements.AddReplacement(deferStmt, replacement, "replace defer errs.Wrap")
-			addErrsImport()
 
 			return true
 		})
@@ -486,13 +548,12 @@ func processFile(fset *token.FileSet, astFile *ast.File, minVariadic bool, verbo
 					continue
 				}
 
-				ctx.errsName = errsName
+				ctx.errsName = errsNameAt(comment.Pos())
 				replacement := generateWrapStatement(ctx)
 				if verboseOut != nil {
 					fmt.Fprintf(verboseOut, "%s: replacing //#wrap-result-err with %s\n", fset.Position(comment.Pos()), replacement)
 				}
 				replacements.AddReplacement(comment, replacement, "replace //#wrap-result-err")
-				addErrsImport()
 			}
 		}
 	}
@@ -541,7 +602,7 @@ func processFile(fset *token.FileSet, astFile *ast.File, minVariadic bool, verbo
 			}
 
 			// Find the position to insert (after the opening brace of the function body)
-			fun.errsName = errsName
+			fun.errsName = errsNameAt(funcBody.Lbrace)
 			statement := generateWrapStatement(fun)
 			if funcBody == nil || len(funcBody.List) == 0 {
 				// Empty function body - insert after opening brace
@@ -551,7 +612,6 @@ func processFile(fset *token.FileSet, astFile *ast.File, minVariadic bool, verbo
 				}
 				// Use PosNode to create a zero-width insertion point
 				replacements.AddReplacement(astvisit.PosNode(insertPos), "\n\t"+statement+"\n", "insert defer errs.Wrap")
-				addErrsImport()
 			} else {
 				// Insert before the first statement, with empty line after
 				firstStmt := funcBody.List[0]
@@ -560,7 +620,6 @@ func processFile(fset *token.FileSet, astFile *ast.File, minVariadic bool, verbo
 				}
 				// Use PosNode to create a zero-width insertion point before the first statement
 				replacements.AddReplacement(astvisit.PosNode(firstStmt.Pos()), statement+"\n\n\t", "insert defer errs.Wrap")
-				addErrsImport()
 			}
 
 			return true
@@ -569,6 +628,13 @@ func processFile(fset *token.FileSet, astFile *ast.File, minVariadic bool, verbo
 
 	if len(replacements) == 0 {
 		return nil, nil, nil
+	}
+	if needErrsImport {
+		if addedErrsName == "errs" {
+			imports.Add("github.com/domonda/go-errs")
+		} else {
+			imports.AddNamed(addedErrsName, "github.com/domonda/go-errs")
+		}
 	}
 
 	return replacements, imports, nil
@@ -643,20 +709,24 @@ func replacementChangesSource(fset *token.FileSet, source []byte, repl astvisit.
 	}
 }
 
-func copyFile(src, dst string) error {
-	// Clean paths to prevent directory traversal
-	src = filepath.Clean(src)
-	dst = filepath.Clean(dst)
-
-	source, err := os.ReadFile(src) // #nosec G304 -- paths are cleaned and validated by filepath.Walk
+// copyFile copies the file src to dst, creating dst with perm if it doesn't exist.
+func copyFile(src, dst string, perm os.FileMode) (err error) {
+	// #nosec G304 -- src is a file below the source directory found by filepath.Walk
+	source, err := os.Open(src)
 	if err != nil {
 		return err
 	}
+	defer source.Close()
 
-	info, err := os.Stat(src)
+	// #nosec G302,G304 -- the permissions of the source file, dst is constructed via filepath.Join
+	dest, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, perm)
 	if err != nil {
 		return err
 	}
+	defer func() {
+		err = errors.Join(err, dest.Close())
+	}()
 
-	return os.WriteFile(dst, source, info.Mode()) // #nosec G703 -- paths are cleaned via filepath.Clean above
+	_, err = io.Copy(dest, source)
+	return err
 }

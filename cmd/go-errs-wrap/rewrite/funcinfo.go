@@ -3,6 +3,10 @@ package rewrite
 import (
 	"go/ast"
 	"go/token"
+	"path"
+	"strconv"
+	"strings"
+	"unicode"
 )
 
 // funcInfo holds information about a function needed to generate
@@ -12,7 +16,7 @@ type funcInfo struct {
 	paramNames      []string
 	keepSecretNames map[string]bool // parameter names that should be wrapped with errs.KeepSecret
 	errorResultName string
-	errsName        string // name of the imported go-errs package, "errs" if empty
+	errsName        string // name to reference the go-errs package, "errs" if empty
 	startPos        token.Pos
 	endPos          token.Pos
 }
@@ -80,33 +84,104 @@ func extractErrsAliases(file *ast.File) map[string]bool {
 			aliases["errs"] = true
 		}
 	}
-	// If no import found, still check for "errs" as default
-	if len(aliases) == 0 {
+	// If no import found, still check for "errs" as default,
+	// unless another imported package has that name
+	if len(aliases) == 0 && !importsOtherErrsPackage(file) {
 		aliases["errs"] = true
 	}
 	return aliases
 }
 
-// errsPackageName returns the name under which file imports the go-errs package
-// and whether file imports it with a name usable in generated code.
-// An unnamed import is preferred over an aliased one. Without such an import,
-// or with only a blank or dot import, the default name "errs" is returned.
-func errsPackageName(file *ast.File) (name string, imported bool) {
+// importsOtherErrsPackage reports whether file imports a package
+// other than go-errs under the name "errs".
+// For an unnamed import the name is guessed from the import path.
+func importsOtherErrsPackage(file *ast.File) bool {
+	for _, imp := range file.Imports {
+		if imp.Path.Value == errsImportPath {
+			continue
+		}
+		name := ""
+		if imp.Name != nil {
+			name = imp.Name.Name
+		} else if importPath, err := strconv.Unquote(imp.Path.Value); err == nil {
+			name = assumedPackageName(importPath)
+		}
+		if name == "errs" {
+			return true
+		}
+	}
+	return false
+}
+
+// assumedPackageName guesses the package name of an import path
+// like goimports does: the last path element without a major version
+// element, a "go-" prefix and anything after the first character
+// that is not valid in an identifier.
+func assumedPackageName(importPath string) string {
+	base := path.Base(importPath)
+	if strings.HasPrefix(base, "v") {
+		if _, err := strconv.Atoi(base[1:]); err == nil {
+			base = path.Base(path.Dir(importPath))
+		}
+	}
+	base = strings.TrimPrefix(base, "go-")
+	if i := strings.IndexFunc(base, func(r rune) bool {
+		return !unicode.IsLetter(r) && !unicode.IsDigit(r) && r != '_'
+	}); i >= 0 {
+		base = base[:i]
+	}
+	return base
+}
+
+// errsImportName returns the name under which file imports the go-errs package
+// for use in generated code, preferring an unnamed import over an aliased one.
+// It returns an empty string if file has no such import,
+// also if it only has a blank or dot import.
+func errsImportName(file *ast.File) (name string) {
 	for _, imp := range file.Imports {
 		if imp.Path.Value != errsImportPath {
 			continue
 		}
 		if imp.Name == nil {
-			return "errs", true
+			return "errs"
 		}
 		if imp.Name.Name != "_" && imp.Name.Name != "." {
 			name = imp.Name.Name
 		}
 	}
-	if name == "" {
-		return "errs", false
-	}
-	return name, true
+	return name
+}
+
+// isShadowedAt reports whether name is declared as receiver, type parameter,
+// parameter or result of a function enclosing pos in file,
+// so that it does not refer to an imported package at pos.
+func isShadowedAt(file *ast.File, pos token.Pos, name string) (shadowed bool) {
+	ast.Inspect(file, func(n ast.Node) bool {
+		if shadowed || n == nil || pos < n.Pos() || pos > n.End() {
+			return false
+		}
+		var fieldLists []*ast.FieldList
+		switch node := n.(type) {
+		case *ast.FuncDecl:
+			fieldLists = []*ast.FieldList{node.Recv, node.Type.TypeParams, node.Type.Params, node.Type.Results}
+		case *ast.FuncLit:
+			fieldLists = []*ast.FieldList{node.Type.Params, node.Type.Results}
+		}
+		for _, fieldList := range fieldLists {
+			if fieldList == nil {
+				continue
+			}
+			for _, field := range fieldList.List {
+				for _, ident := range field.Names {
+					if ident.Name == name {
+						shadowed = true
+					}
+				}
+			}
+		}
+		return !shadowed
+	})
+	return shadowed
 }
 
 // extractKeepSecretParams extracts the parameter names that are wrapped with

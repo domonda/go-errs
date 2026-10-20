@@ -5,7 +5,7 @@ import (
 	"strings"
 )
 
-// errsPkg returns the name to use for the go-errs package in generated code.
+// errsPkg returns the name to reference the go-errs package with in generated code.
 func (fun *funcInfo) errsPkg() string {
 	if fun.errsName == "" {
 		return "errs"
@@ -39,7 +39,7 @@ func (fun *funcInfo) formatParams() string {
 //
 // If keepSecretNames contains any parameter names, those parameters will be
 // wrapped with errs.KeepSecret() to prevent secrets from appearing in logs.
-// The go-errs package is referenced by fun.errsName.
+// The go-errs package is referenced by fun.errsPkg().
 func generateWrapStatement(fun *funcInfo) string {
 	switch numParams := len(fun.paramNames); {
 	case numParams == 0:

@@ -67,10 +67,12 @@ Validate that all functions have error wrappers (for CI):
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/domonda/go-errs"
@@ -115,23 +117,11 @@ func main() {
 		os.Exit(0)
 	}
 
-	args := fs.Args()
-	if len(args) < 1 {
-		fmt.Fprintln(os.Stderr, "error: missing path argument")
+	sourcePath, recursive, err := parsePathArgs(fs.Args())
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "error:", err)
 		printUsage()
 		os.Exit(1)
-	}
-
-	sourcePath := args[0]
-
-	// Check if user passed a "..." pattern (e.g., "./..." or "./pkg/...")
-	recursive := false
-	if before, ok := strings.CutSuffix(sourcePath, "/..."); ok {
-		sourcePath = before
-		recursive = true
-	} else if sourcePath == "..." {
-		sourcePath = "."
-		recursive = true
 	}
 
 	var verboseOut io.Writer
@@ -139,7 +129,6 @@ func main() {
 		verboseOut = os.Stdout
 	}
 
-	var err error
 	switch command {
 	case "remove":
 		err = rewrite.Remove(sourcePath, outPath, recursive, validate, verboseOut)
@@ -159,6 +148,32 @@ func main() {
 	}
 }
 
+// parsePathArgs returns the source path from the arguments left after
+// parsing the flags, without a "..." pattern (e.g. "./..." or "./pkg/..."),
+// and whether such a pattern requested to process the path recursively.
+// The flag package stops parsing at the path, so an argument after the path
+// is an error instead of a flag that is ignored, like -validate in CI.
+func parsePathArgs(args []string) (sourcePath string, recursive bool, err error) {
+	switch {
+	case len(args) == 0:
+		return "", false, errors.New("missing path argument")
+	case len(args) > 1:
+		return "", false, fmt.Errorf("unexpected argument %q after path %q, options must come before the path", args[1], args[0])
+	}
+
+	sourcePath = args[0]
+	if sourcePath == "..." {
+		return ".", true, nil
+	}
+	// The go command also accepts the separator of the OS, like .\pkg\... on Windows
+	for _, suffix := range []string{"/...", string(filepath.Separator) + "..."} {
+		if before, ok := strings.CutSuffix(sourcePath, suffix); ok {
+			return before, true, nil
+		}
+	}
+	return sourcePath, false, nil
+}
+
 func printUsage() {
 	fmt.Println(`go-errs-wrap - manage defer errs.WrapWithFuncParams statements
 
@@ -175,17 +190,23 @@ Arguments:
   path     Source directory or file path
            - If file: process only that file (*_test.go files are never processed)
            - If directory: process the Go package in that directory
-           - If directory/...: process all packages below the directory like the
-             go command, including main packages, skipping testdata, vendor,
-             directories starting with . or _, nested modules and files that
-             need custom build tags
+           - If directory/...: process all packages below the directory
+           Files are selected like the go command does: main packages are
+           included, a directory skips files that need custom build tags and
+           files starting with . or _, and /... also skips testdata, vendor,
+           directories starting with . or _, directories ignored by go.mod and
+           nested modules. A directory that is not within a module processes
+           all modules below it.
 
 Options:
   -out <path>     Output to different location instead of modifying source
                   - If source is directory: create a copy of the directory,
-                    or of the directory tree with /..., with the rewritten files
-                  - If source is file: write to specified file path
-                  - All other files are copied unchanged
+                    or of the directory tree with /..., with the rewritten files.
+                    All other files are copied unchanged, except version control
+                    metadata, symbolic links to directories and special files.
+                    The output path must not contain the source directory.
+                  - If source is file: write to the output path if it ends
+                    with .go, else into that directory, created if missing
   -validate       Dry run mode: check for issues without modifying files. Reports issues
                   to stderr and exits with error code 1 if any are found. Useful for CI
                   validation to ensure code quality standards are met.
