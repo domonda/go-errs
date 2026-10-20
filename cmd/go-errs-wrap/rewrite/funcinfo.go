@@ -12,6 +12,7 @@ type funcInfo struct {
 	paramNames      []string
 	keepSecretNames map[string]bool // parameter names that should be wrapped with errs.KeepSecret
 	errorResultName string
+	errsName        string // name of the imported go-errs package, "errs" if empty
 	startPos        token.Pos
 	endPos          token.Pos
 }
@@ -84,6 +85,28 @@ func extractErrsAliases(file *ast.File) map[string]bool {
 		aliases["errs"] = true
 	}
 	return aliases
+}
+
+// errsPackageName returns the name under which file imports the go-errs package
+// and whether file imports it with a name usable in generated code.
+// An unnamed import is preferred over an aliased one. Without such an import,
+// or with only a blank or dot import, the default name "errs" is returned.
+func errsPackageName(file *ast.File) (name string, imported bool) {
+	for _, imp := range file.Imports {
+		if imp.Path.Value != errsImportPath {
+			continue
+		}
+		if imp.Name == nil {
+			return "errs", true
+		}
+		if imp.Name.Name != "_" && imp.Name.Name != "." {
+			name = imp.Name.Name
+		}
+	}
+	if name == "" {
+		return "errs", false
+	}
+	return name, true
 }
 
 // extractKeepSecretParams extracts the parameter names that are wrapped with

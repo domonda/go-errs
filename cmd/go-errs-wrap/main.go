@@ -173,14 +173,19 @@ Commands:
 
 Arguments:
   path     Source directory or file path
-           - If directory: recursively process all *.go files (excluding *_test.go)
-           - If file: process only that file
+           - If file: process only that file (*_test.go files are never processed)
+           - If directory: process the Go package in that directory
+           - If directory/...: process all packages below the directory like the
+             go command, including main packages, skipping testdata, vendor,
+             directories starting with . or _, nested modules and files that
+             need custom build tags
 
 Options:
   -out <path>     Output to different location instead of modifying source
-                  - If source is directory: create copy of directory structure
+                  - If source is directory: create a copy of the directory,
+                    or of the directory tree with /..., with the rewritten files
                   - If source is file: write to specified file path
-                  - Non-Go files are copied unchanged
+                  - All other files are copied unchanged
   -validate       Dry run mode: check for issues without modifying files. Reports issues
                   to stderr and exits with error code 1 if any are found. Useful for CI
                   validation to ensure code quality standards are met.

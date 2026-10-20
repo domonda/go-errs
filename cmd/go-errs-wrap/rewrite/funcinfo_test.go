@@ -194,3 +194,39 @@ func Another(x string) error {
 	assert.Equal(t, []string{"b"}, innerCtx.paramNames)
 	assert.Equal(t, "innerErr", innerCtx.errorResultName)
 }
+
+func TestErrsPackageName(t *testing.T) {
+	tests := []struct {
+		name         string
+		imports      string
+		wantName     string
+		wantImported bool
+	}{
+		{name: "no import", imports: `import "fmt"`, wantName: "errs", wantImported: false},
+		{name: "unnamed", imports: `import "github.com/domonda/go-errs"`, wantName: "errs", wantImported: true},
+		{name: "aliased", imports: `import e "github.com/domonda/go-errs"`, wantName: "e", wantImported: true},
+		{
+			name: "unnamed preferred over aliased",
+			imports: `import (
+	e "github.com/domonda/go-errs"
+	"github.com/domonda/go-errs"
+)`,
+			wantName:     "errs",
+			wantImported: true,
+		},
+		// Generated code can't reference a blank or dot import,
+		// so the unnamed import has to be added
+		{name: "blank", imports: `import _ "github.com/domonda/go-errs"`, wantName: "errs", wantImported: false},
+		{name: "dot", imports: `import . "github.com/domonda/go-errs"`, wantName: "errs", wantImported: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			file, err := parser.ParseFile(token.NewFileSet(), "test.go", "package test\n\n"+tt.imports+"\n", parser.ImportsOnly)
+			require.NoError(t, err)
+
+			name, imported := errsPackageName(file)
+			assert.Equal(t, tt.wantName, name)
+			assert.Equal(t, tt.wantImported, imported)
+		})
+	}
+}
