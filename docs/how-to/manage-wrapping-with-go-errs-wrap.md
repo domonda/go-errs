@@ -67,8 +67,8 @@ This deletes every `defer errs.Wrap*` statement and `//#wrap-result-err` marker.
 
 ## Useful flags
 
-- `-out ./somewhere` — write results to a separate tree instead of editing in
-  place (ignored with `-validate`).
+- `-out ./somewhere` — write results to a copy of the directory instead of
+  editing in place, of the whole tree with `/...` (ignored with `-validate`).
 - `-minvariadic` — always emit the specialized `WrapWithNFuncParams` variant
   rather than preserving an existing variadic call.
 - `-verbose` — print each change as it is made.
@@ -107,10 +107,12 @@ out of date; `remove -validate` fails if any wrap still exists.
   not inside a function body. Move it onto its own line inside the function.
 - **`_test.go` files were not changed.** Test files are never processed, also
   not when you point the tool at one directly.
-- **A file was not changed by a `./...` run.** Like the `go` command, `/...`
-  skips `testdata` and `vendor` directories, directories starting with `.` or
-  `_`, nested modules and files that need custom build tags. Run the tool in a
-  nested module's directory to process it.
+- **A file was not changed.** Like the `go` command, the tool skips files that
+  need custom build tags and files whose names start with `.` or `_` in a
+  directory (pass such a file as path to process it), and `/...`
+  also skips `testdata` and `vendor` directories, directories starting with `.`
+  or `_`, directories the module's `go.mod` ignores, and nested modules. Run the
+  tool in a nested module's directory to process it.
 
 ## Related
 

@@ -598,8 +598,8 @@ go-errs-wrap remove ./pkg/...
 **Write changes to another output location:**
 
 ```bash
-# Output to a different location
-go-errs-wrap insert -out ./output ./pkg/mypackage
+# Output a copy of the directory tree with the rewritten files
+go-errs-wrap insert -out ./output ./pkg/...
 
 # Show verbose progress
 go-errs-wrap insert -verbose ./pkg/...

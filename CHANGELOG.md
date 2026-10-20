@@ -21,13 +21,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   run `go get github.com/domonda/go-errs@latest` first, then `go mod tidy`.
   Until `go-errs` is upgraded, `go get -u tool` fails with an ambiguous import,
   because older `go-errs` versions still contain the tool's packages.
-- `go-errs-wrap` selects the files of a `/...` path like the `go` command:
-  `main` packages are now processed, while `testdata` and `vendor` directories,
-  directories starting with `.` or `_`, nested modules and files that need
-  custom build tags are skipped, so `-validate` no longer checks them.
-- `go-errs-wrap` keeps the import groups of a file that already imports `go-errs`
-  and formats it like `gofmt`; imports are only grouped with `goimports`
-  when the `go-errs` import is added.
+- `go-errs-wrap` selects files like the `go` command: `main` packages are now
+  processed, while a directory path skips files that need custom build tags and
+  files whose names start with `.` or `_`, which are only processed when passed
+  as path themselves. A `/...` path also skips `testdata`
+  and `vendor` directories, directories starting with `.` or `_`, directories the
+  module's `go.mod` ignores, and nested modules, so `-validate` no longer checks
+  them. A directory that is not within a module processes all modules below it,
+  `go.work` is not read.
+- `go-errs-wrap` keeps the import groups of the files it rewrites and formats them
+  like `gofmt`; imports are only grouped with `goimports` when `replace` or `insert`
+  adds the `go-errs` import. `remove -out` no longer runs `goimports`, it only
+  removes the `go-errs` import when nothing uses it anymore.
+- `go-errs-wrap -out` with a source directory without `/...` only processes and
+  copies that directory, like without `-out`. Append `/...` to the path
+  (`-out ./output ./pkg/...`) for the previous recursive output.
+- `go-errs-wrap -out` with a source directory copies all files, not only the
+  non-Go files and the rewritten ones, except version control metadata, symbolic
+  links to directories and special files. It refuses an output path that contains
+  the source directory, which overwrote source files, and an output directory
+  within the source directory is not copied into itself. Copies are writable
+  by their owner, so read-only sources can be written to the output again.
 - Requires Go 1.26 instead of Go 1.24, for all modules.
 
 ### Fixed
@@ -40,8 +54,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   uses it anymore, so the rewritten file compiles.
 - `go-errs-wrap` uses the name of an aliased `go-errs` import in generated
   statements instead of adding a second, unnamed import that left the alias unused.
-- `go-errs-wrap -out` with a source directory also copies the Go files it does
-  not change, and like without `-out` only processes subdirectories for a `/...` path.
+  Where a receiver, parameter or result of the function shadows the alias,
+  the unnamed import is used and added.
+- `go-errs-wrap -out` writes its output only after all files were rewritten,
+  and keeps the CRLF line endings of rewritten files.
+- `go-errs-wrap` fails for an argument after the path instead of ignoring it, so
+  `go-errs-wrap insert ./... -validate` no longer rewrites files and exits with 0.
+- `go-errs-wrap` imports `go-errs` as `goerrs` into a file that imports another
+  package as `errs`, and no longer takes that package's `defer errs.Wrap*`
+  statements for `go-errs` ones.
+- `go-errs-wrap` processes a path ending in `\...` recursively on Windows,
+  like the `go` command.
 
 ## [v1.0.4] - 2026-07-02
 

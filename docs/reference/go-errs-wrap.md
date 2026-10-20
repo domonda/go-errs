@@ -39,12 +39,18 @@ go tool -modfile=tools/go.mod go-errs-wrap insert ./...
 go-errs-wrap <command> [options] <path>
 ```
 
-`<command>` is one of `remove`, `replace`, or `insert`. `<path>` is a single
+`<command>` is one of `remove`, `replace`, or `insert`. Options must come
+before `<path>`; any argument after it is an error. `<path>` is a single
 `.go` file or a directory. A directory processes the Go package in it. A trailing
-`/...` (or a bare `...`) processes all packages below the directory like the
-`go` command does: `main` packages are included, while `testdata` and `vendor`
-directories, directories starting with `.` or `_`, nested modules and files
-that need custom build tags are skipped.
+`/...` (or a bare `...`) processes all packages below the directory.
+Files are selected like the `go` command selects them: `main` packages are
+included, while a directory skips files that need custom build tags and files
+whose names start with `.` or `_`, which are only processed when passed as
+`<path>` themselves. A trailing `/...` also skips `testdata` and
+`vendor` directories, directories starting with `.` or `_`, directories that
+the module's `go.mod` ignores, and nested modules. A directory that is not
+within a module, like the root of a repository with several modules and a
+`go.work` file, processes all modules below it; `go.work` is not read.
 
 ## Commands
 
@@ -58,7 +64,7 @@ that need custom build tags are skipped.
 
 | Option          | Description                                          |
 | --------------- | --------------------------------------------------- |
-| `-out <path>`   | Write results to `<path>` instead of modifying the source in place. A directory source produces a copy of the directory, or of the whole directory tree with `/...`, in which only the rewritten Go files differ. Ignored when `-validate` is set. |
+| `-out <path>`   | Write results to `<path>` instead of modifying the source in place. A directory source produces a copy of the directory, or of the whole directory tree with `/...`, in which only the rewritten Go files differ; version control metadata (`.git`, `.hg`, `.svn`), symbolic links to directories and special files are not copied, and `<path>` must not contain the source directory. A file source is written to `<path>` if it ends in `.go`, otherwise into the directory `<path>`, which is created if missing. Ignored when `-validate` is set. |
 | `-minvariadic`  | Always emit the specialized `WrapWithNFuncParams` variant instead of preserving an existing variadic `WrapWithFuncParams` call |
 | `-validate`     | Dry-run: modify nothing, report issues to stderr, exit `1` if any are found. For CI |
 | `-verbose`      | Print progress to stdout                            |
@@ -132,8 +138,8 @@ go-errs-wrap replace ./pkg/mypackage/file.go
 # Remove all wrap statements recursively
 go-errs-wrap remove ./pkg/...
 
-# Write results to a separate tree instead of editing in place
-go-errs-wrap insert -out ./output ./pkg/mypackage
+# Write results to a separate directory tree instead of editing in place
+go-errs-wrap insert -out ./output ./pkg/...
 
 # CI: fail the build if any function is missing a wrap statement
 go-errs-wrap insert -validate ./pkg/...
