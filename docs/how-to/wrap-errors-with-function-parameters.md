@@ -5,7 +5,7 @@ returns an error, so failures carry their context into your logs.
 
 ## Prerequisites
 
-- Go 1.26 or newer.
+- Go 1.24 or newer.
 - The package installed: `go get github.com/domonda/go-errs`.
 - A function whose error return is a **named** result (`(err error)`), because
   the wrap functions take a pointer to it.

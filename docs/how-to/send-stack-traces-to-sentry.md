@@ -5,7 +5,7 @@ events, with no glue code and no dependency on `go-errs` from Sentry's side.
 
 ## Prerequisites
 
-- Go 1.26 or newer, with `github.com/domonda/go-errs` installed.
+- Go 1.24 or newer, with `github.com/domonda/go-errs` installed.
 - `sentry-go` set up in your service (`github.com/getsentry/sentry-go`), with
   `sentry.Init(...)` already called.
 - Errors created or wrapped through this package (`New`, `Errorf`,

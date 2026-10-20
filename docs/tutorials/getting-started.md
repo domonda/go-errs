@@ -9,7 +9,7 @@ You will see a real multi-frame error trace within the first three steps.
 
 ## What you'll need
 
-- Go 1.26 or newer (`go version` to check).
+- Go 1.24 or newer (`go version` to check).
 - A scratch directory. No prior knowledge of the package required.
 
 ## Step 1: Create a module and install the package

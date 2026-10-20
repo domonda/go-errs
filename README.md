@@ -673,7 +673,7 @@ This is preferable to omitting sensitive parameters entirely, as omitted paramet
 
 ## Compatibility
 
-- **Go version:** Requires Go 1.26+
+- **Go version:** Requires Go 1.24+, the `go-errs-wrap` tool requires Go 1.26+
 - **Error handling:** Fully compatible with `errors.Is`, `errors.As`, `errors.Unwrap`, and `errors.Join`
 - **Testing:** Use with `testify` or any testing framework
 - **Sentry:** Errors wrapped with a call stack are recognized by `sentry-go` (see below)
