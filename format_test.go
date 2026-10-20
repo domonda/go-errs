@@ -792,3 +792,39 @@ func TestCallStackFilePath(t *testing.T) {
 		File:     "/Users/somebody/go/src/github.com/domonda/go-errs/wrapwithfuncparams_test.go",
 	}), "override trims prefix")
 }
+
+func TestLogFunctionCall(t *testing.T) {
+	t.Run("nil logger does not panic", func(t *testing.T) {
+		assert.NotPanics(t, func() {
+			LogFunctionCall(nil, "myFunc", "arg1", 42)
+		})
+	})
+
+	t.Run("logs formatted call", func(t *testing.T) {
+		log := &testLogger{}
+		LogFunctionCall(log, "myFunc", "arg1", 42)
+
+		assert.Len(t, log.messages, 1)
+		assert.True(t, strings.Contains(log.messages[0], "myFunc("))
+		assert.True(t, strings.Contains(log.messages[0], "arg1"))
+		assert.True(t, strings.Contains(log.messages[0], "42"))
+	})
+
+	t.Run("no params", func(t *testing.T) {
+		log := &testLogger{}
+		LogFunctionCall(log, "noArgs")
+
+		assert.Len(t, log.messages, 1)
+		assert.Equal(t, "noArgs()", log.messages[0])
+	})
+
+	// The formatted call must not be used as Printf format string,
+	// else a % in a parameter value is read as format verb
+	// and logged as withPercent(`100%!d(MISSING)`).
+	t.Run("percent in param is not a format verb", func(t *testing.T) {
+		log := &testLogger{}
+		LogFunctionCall(log, "withPercent", "100%d")
+
+		assert.Equal(t, []string{"withPercent(`100%d`)"}, log.messages)
+	})
+}
