@@ -110,9 +110,9 @@ out of date; `remove -validate` fails if any wrap still exists.
 - **A file was not changed.** Like the `go` command, the tool skips files that
   need custom build tags and files whose names start with `.` or `_` in a
   directory (pass such a file as path to process it), and `/...`
-  also skips `testdata` and `vendor` directories, directories starting with `.`
-  or `_`, directories the module's `go.mod` ignores, and nested modules. Run the
-  tool in a nested module's directory to process it.
+  also skips `testdata`, `vendor` and `node_modules` directories, directories
+  starting with `.` or `_`, directories the module's `go.mod` ignores, and nested
+  modules. Run the tool in a nested module's directory to process it.
 
 ## Related
 

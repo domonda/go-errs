@@ -46,11 +46,12 @@ before `<path>`; any argument after it is an error. `<path>` is a single
 Files are selected like the `go` command selects them: `main` packages are
 included, while a directory skips files that need custom build tags and files
 whose names start with `.` or `_`, which are only processed when passed as
-`<path>` themselves. A trailing `/...` also skips `testdata` and
-`vendor` directories, directories starting with `.` or `_`, directories that
-the module's `go.mod` ignores, and nested modules. A directory that is not
-within a module, like the root of a repository with several modules and a
-`go.work` file, processes all modules below it; `go.work` is not read.
+`<path>` themselves. A trailing `/...` also skips `testdata`, `vendor` and
+`node_modules` directories, directories starting with `.` or `_`, directories
+that the module's `go.mod` ignores, and nested modules. Unlike the `go` command,
+`/...` on a directory that is not within a module, like the root of a repository
+with several modules and a `go.work` file but no `go.mod`, processes all modules
+below it; `go.work` is not read.
 
 ## Commands
 
@@ -64,7 +65,7 @@ within a module, like the root of a repository with several modules and a
 
 | Option          | Description                                          |
 | --------------- | --------------------------------------------------- |
-| `-out <path>`   | Write results to `<path>` instead of modifying the source in place. A directory source produces a copy of the directory, or of the whole directory tree with `/...`, in which only the rewritten Go files differ; version control metadata (`.git`, `.hg`, `.svn`), symbolic links to directories and special files are not copied, and `<path>` must not contain the source directory. A file source is written to `<path>` if it ends in `.go`, otherwise into the directory `<path>`, which is created if missing. Ignored when `-validate` is set. |
+| `-out <path>`   | Write results to `<path>` instead of modifying the source in place. A directory source produces a copy of the directory, or of the whole directory tree with `/...`, in which only the rewritten Go files differ; version control metadata (`.git`, `.hg`, `.svn`), symbolic links to directories and special files are not copied, and `<path>` must not be the source directory, be within it or contain it. A file source is written to `<path>` if it ends in `.go`, otherwise into the directory `<path>`, which is created if missing. Ignored when `-validate` is set. |
 | `-minvariadic`  | Always emit the specialized `WrapWithNFuncParams` variant instead of preserving an existing variadic `WrapWithFuncParams` call |
 | `-validate`     | Dry-run: modify nothing, report issues to stderr, exit `1` if any are found. For CI |
 | `-verbose`      | Print progress to stdout                            |
@@ -87,6 +88,7 @@ processed, also not when passed as `<path>`.
 | ---- | -------------------------------------------------------------- |
 | `0`  | Success — operation completed, or `-validate` found no issues   |
 | `1`  | Error — validation found issues, or a bad argument / missing file |
+| `2`  | Invalid option, like an unknown flag or a flag without its value |
 
 ## Generated statement selection
 
