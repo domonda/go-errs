@@ -536,18 +536,31 @@ The `go-errs-wrap` command-line tool helps manage `defer errs.WrapWithFuncParams
 
 ### Installation
 
-Add the tool to your module, together with the latest `go-errs`:
+`go-errs-wrap` is the module `github.com/domonda/go-errs/cmd/go-errs-wrap`
+and needs `go-errs` v1.1.0 or newer in your module, so add `go-errs` first:
 
 ```bash
-go get -tool github.com/domonda/go-errs/cmd/go-errs-wrap@latest github.com/domonda/go-errs@latest
+go get github.com/domonda/go-errs@latest
+go get -tool github.com/domonda/go-errs/cmd/go-errs-wrap@latest
 ```
 
 Run it with `go tool go-errs-wrap`, or install the `go-errs-wrap` binary
 from within your module with `go install github.com/domonda/go-errs/cmd/go-errs-wrap`.
+Older `go-errs` versions still contain the tool's packages, which makes its
+import ambiguous, and without a `go-errs` requirement the tool's own
+requirement on `go-errs` can't be resolved.
 `go install github.com/domonda/go-errs/cmd/go-errs-wrap@latest` does not work:
 the tool's module replaces `go-errs` with its local checkout.
-`go-errs` versions up to v1.0.4 still contain the tool's packages,
-which is why `go get -tool` also needs `github.com/domonda/go-errs@latest`.
+
+To keep the tool's dependencies, like `golang.org/x/tools`, out of your
+module's `go.mod`, add the tool to a separate tools module file instead:
+
+```bash
+mkdir tools && (cd tools && go mod init example.com/yourmodule/tools)
+go get -modfile=tools/go.mod github.com/domonda/go-errs@latest
+go get -modfile=tools/go.mod -tool github.com/domonda/go-errs/cmd/go-errs-wrap@latest
+go tool -modfile=tools/go.mod go-errs-wrap insert ./...
+```
 
 ### Commands
 
@@ -565,7 +578,7 @@ which is why `go get -tool` also needs `github.com/domonda/go-errs@latest`.
 # Process a single file
 go-errs-wrap insert ./pkg/mypackage/file.go
 
-# Process all Go files in a directory recursively
+# Process all packages below a directory, like go build ./pkg/...
 go-errs-wrap insert ./pkg/...
 ```
 

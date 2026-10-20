@@ -10,7 +10,8 @@ mechanically instead of by hand, and enforce their presence in CI.
   (see [Installation](../reference/go-errs-wrap.md#installation)):
 
   ```bash
-  go get -tool github.com/domonda/go-errs/cmd/go-errs-wrap@latest github.com/domonda/go-errs@latest
+  go get github.com/domonda/go-errs@latest
+  go get -tool github.com/domonda/go-errs/cmd/go-errs-wrap@latest
   go install github.com/domonda/go-errs/cmd/go-errs-wrap
   ```
 
@@ -88,7 +89,8 @@ out of date; `remove -validate` fails if any wrap still exists.
 ## Verification
 
 - After `insert`/`replace`, run `go build ./...` and `go vet ./...`; the tool
-  re-sorts imports with `goimports`, so the result should compile cleanly.
+  adds a missing `github.com/domonda/go-errs` import, so the result should
+  compile cleanly.
 - Run the matching `-validate` command and confirm it exits `0` once the tree is
   in the desired state.
 
@@ -103,8 +105,12 @@ out of date; `remove -validate` fails if any wrap still exists.
   [redact-sensitive-parameters.md](redact-sensitive-parameters.md).
 - **A `//#wrap-result-err` marker was left untouched with a warning.** It was
   not inside a function body. Move it onto its own line inside the function.
-- **`_test.go` files were not changed.** Test files are skipped when processing a
-  directory; point the tool at the file directly if you need it.
+- **`_test.go` files were not changed.** Test files are never processed, also
+  not when you point the tool at one directly.
+- **A file was not changed by a `./...` run.** Like the `go` command, `/...`
+  skips `testdata` and `vendor` directories, directories starting with `.` or
+  `_`, nested modules and files that need custom build tags. Run the tool in a
+  nested module's directory to process it.
 
 ## Related
 

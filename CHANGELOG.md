@@ -11,11 +11,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `go-errs-wrap` is its own module `github.com/domonda/go-errs/cmd/go-errs-wrap`,
   so the `go-errs` module no longer depends on `github.com/ungerik/go-astvisit`
-  and `golang.org/x/tools`. Because the tool's module replaces `go-errs` with
-  its local checkout, `go install github.com/domonda/go-errs/cmd/go-errs-wrap@latest`
-  no longer works. Add the tool with
-  `go get -tool github.com/domonda/go-errs/cmd/go-errs-wrap@latest github.com/domonda/go-errs@latest`
-  instead: `go-errs` versions up to v1.0.4 still contain the tool's packages.
+  and `golang.org/x/tools`. The tool needs `go-errs` v1.1.0 or newer in your
+  module, so add it with two commands:
+  `go get github.com/domonda/go-errs@latest`, then
+  `go get -tool github.com/domonda/go-errs/cmd/go-errs-wrap@latest`.
+  Because the tool's module replaces `go-errs` with its local checkout,
+  `go install github.com/domonda/go-errs/cmd/go-errs-wrap@latest` no longer works.
+- Upgrading a module that already has `tool github.com/domonda/go-errs/cmd/go-errs-wrap`:
+  run `go get github.com/domonda/go-errs@latest` first, then `go mod tidy`.
+  Until `go-errs` is upgraded, `go get -u tool` fails with an ambiguous import,
+  because older `go-errs` versions still contain the tool's packages.
+- `go-errs-wrap` selects the files of a `/...` path like the `go` command:
+  `main` packages are now processed, while `testdata` and `vendor` directories,
+  directories starting with `.` or `_`, nested modules and files that need
+  custom build tags are skipped, so `-validate` no longer checks them.
+- `go-errs-wrap` keeps the import groups of a file that already imports `go-errs`
+  and formats it like `gofmt`; imports are only grouped with `goimports`
+  when the `go-errs` import is added.
 - Requires Go 1.26 instead of Go 1.24, for all modules.
 
 ### Fixed
@@ -24,6 +36,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   which `gen-func-wrappers` of go-function v1.0.0 requires: modules using both tools
   select that version for `go-errs-wrap` too, whose old import API it no longer has.
 - `LogFunctionCall` no longer reads a `%` in the formatted call as format verb.
+- `go-errs-wrap remove` without `-out` removes the `go-errs` import when nothing
+  uses it anymore, so the rewritten file compiles.
+- `go-errs-wrap` uses the name of an aliased `go-errs` import in generated
+  statements instead of adding a second, unnamed import that left the alias unused.
+- `go-errs-wrap -out` with a source directory also copies the Go files it does
+  not change, and like without `-out` only processes subdirectories for a `/...` path.
 
 ## [v1.0.4] - 2026-07-02
 
