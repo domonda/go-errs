@@ -42,7 +42,7 @@ go-errs-wrap <command> [options] <path>
 `<command>` is one of `remove`, `replace`, or `insert`. Options must come
 before `<path>`; any argument after it is an error. `<path>` is a single
 `.go` file or a directory. A directory processes the Go package in it. A trailing
-`/...` (or a bare `...`) processes all packages below the directory.
+`/...` (or a bare `...`, or `\...` on Windows) processes all packages below the directory.
 Files are selected like the `go` command selects them: `main` packages are
 included, while a directory skips files that need custom build tags and files
 whose names start with `.` or `_`, which are only processed when passed as
@@ -72,7 +72,7 @@ below it; `go.work` is not read.
 | `-help`         | Show usage and exit                                 |
 
 Only files ending in `.go` are transformed; `*_test.go` files are never
-processed, also not when passed as `<path>`.
+processed: a directory skips them, and passing one as `<path>` is an error.
 
 ### What `-validate` checks per command
 

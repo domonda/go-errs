@@ -105,8 +105,8 @@ out of date; `remove -validate` fails if any wrap still exists.
   [redact-sensitive-parameters.md](redact-sensitive-parameters.md).
 - **A `//#wrap-result-err` marker was left untouched with a warning.** It was
   not inside a function body. Move it onto its own line inside the function.
-- **`_test.go` files were not changed.** Test files are never processed, also
-  not when you point the tool at one directly.
+- **`_test.go` files were not changed.** Test files are never processed: a
+  directory skips them, and pointing the tool at one directly is an error.
 - **A file was not changed.** Like the `go` command, the tool skips files that
   need custom build tags and files whose names start with `.` or `_` in a
   directory (pass such a file as path to process it), and `/...`
