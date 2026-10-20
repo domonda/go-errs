@@ -450,7 +450,8 @@ func Outer(a int) (err error) {
 	file, err := parser.ParseFile(fset, "test.go", code, parser.ParseComments)
 	require.NoError(t, err)
 
-	replacements, imports, err := processFile(fset, file, true, nil, modeReplace)
+	noPackageNames := func() (map[string]bool, error) { return nil, nil }
+	replacements, imports, err := processFile(fset, file, noPackageNames, true, nil, modeReplace)
 	require.NoError(t, err)
 
 	// Should have one replacement for the anonymous function
@@ -711,68 +712,6 @@ func ProcessData(id string) (err error) {
 	assert.Contains(t, outputStr, "defer errs.WrapWith1FuncParam(&err, id)\n\n")
 }
 
-func TestExtractErrsAliases(t *testing.T) {
-	tests := []struct {
-		name     string
-		code     string
-		expected map[string]bool
-	}{
-		{
-			name:     "no import",
-			code:     `package test`,
-			expected: map[string]bool{"errs": true}, // default fallback
-		},
-		{
-			name: "default import",
-			code: `package test
-import "github.com/domonda/go-errs"`,
-			expected: map[string]bool{"errs": true},
-		},
-		{
-			name: "aliased import",
-			code: `package test
-import e "github.com/domonda/go-errs"`,
-			expected: map[string]bool{"e": true},
-		},
-		{
-			name: "named import",
-			code: `package test
-import goerrs "github.com/domonda/go-errs"`,
-			expected: map[string]bool{"goerrs": true},
-		},
-		{
-			name: "multiple imports with alias",
-			code: `package test
-import (
-	"fmt"
-	myerrs "github.com/domonda/go-errs"
-	"os"
-)`,
-			expected: map[string]bool{"myerrs": true},
-		},
-		{
-			name: "other imports only",
-			code: `package test
-import (
-	"fmt"
-	"os"
-)`,
-			expected: map[string]bool{"errs": true}, // default fallback
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			fset := token.NewFileSet()
-			file, err := parser.ParseFile(fset, "test.go", tt.code, parser.ImportsOnly)
-			require.NoError(t, err)
-
-			result := extractErrsAliases(file)
-			assert.Equal(t, tt.expected, result)
-		})
-	}
-}
-
 func TestExtractKeepSecretParams(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -841,7 +780,12 @@ func f() { defer goerrs.WrapWith2FuncParams(&err, goerrs.KeepSecret(key), ctx) }
 			})
 			require.NotNil(t, deferStmt, "no defer statement found")
 
-			errsAliases := extractErrsAliases(file)
+			// The names of the go-errs imports, or errs without import, like processFile
+			names, imported := errsImportNames(file)
+			errsAliases := map[string]bool{"errs": !imported}
+			for _, name := range names {
+				errsAliases[name] = true
+			}
 			result := extractKeepSecretParams(deferStmt, errsAliases)
 			assert.Equal(t, tt.expected, result)
 		})
@@ -2786,4 +2730,412 @@ func TestRewriteSingleFileOutputKeepsPermissions(t *testing.T) {
 	info, err := os.Stat(outFile)
 	require.NoError(t, err)
 	assert.Equal(t, os.FileMode(0644), info.Mode().Perm())
+}
+
+// TestReplaceKeepsErrsNameOfStatements verifies that replace keeps the name
+// under which an existing statement references go-errs, so that replace
+// -validate passes after insert imported go-errs once more for a function
+// shadowing the alias, and that renaming the shadowing parameter leaves
+// no go-errs import unused.
+func TestReplaceKeepsErrsNameOfStatements(t *testing.T) {
+	t.Run("alias shadowed in another function", func(t *testing.T) {
+		const input = `package test
+
+import e "github.com/domonda/go-errs"
+
+func Load(id string) (err error) {
+	defer e.WrapWith1FuncParam(&err, id)
+
+	return nil
+}
+
+func Check(e int) (err error) {
+	return nil
+}
+`
+		const want = `package test
+
+import (
+	"github.com/domonda/go-errs"
+	e "github.com/domonda/go-errs"
+)
+
+func Load(id string) (err error) {
+	defer e.WrapWith1FuncParam(&err, id)
+
+	return nil
+}
+
+func Check(e int) (err error) {
+	defer errs.WrapWith1FuncParam(&err, e)
+
+	return nil
+}
+`
+		file := filepath.Join(t.TempDir(), "load.go")
+		err := os.WriteFile(file, []byte(input), 0600)
+		require.NoError(t, err)
+
+		err = Insert(file, "", false, true, false, nil)
+		require.NoError(t, err)
+		output, err := os.ReadFile(file)
+		require.NoError(t, err)
+		assert.Equal(t, want, string(output))
+
+		err = Replace(file, "", false, true, true, nil)
+		require.NoError(t, err, "replace -validate after insert")
+		err = Replace(file, "", false, true, false, nil)
+		require.NoError(t, err)
+		output, err = os.ReadFile(file)
+		require.NoError(t, err)
+		assert.Equal(t, want, string(output), "replace after insert")
+	})
+
+	t.Run("shadowing parameter renamed", func(t *testing.T) {
+		const input = `package test
+
+func Load(id string) (err error) {
+	return nil
+}
+
+func Combine(errs ...error) (err error) {
+	return nil
+}
+`
+		file := filepath.Join(t.TempDir(), "load.go")
+		err := os.WriteFile(file, []byte(input), 0600)
+		require.NoError(t, err)
+
+		err = Insert(file, "", false, true, false, nil)
+		require.NoError(t, err)
+		output, err := os.ReadFile(file)
+		require.NoError(t, err)
+		renamed := strings.ReplaceAll(string(output), "errs ...error", "list ...error")
+		err = os.WriteFile(file, []byte(renamed), 0600)
+		require.NoError(t, err)
+
+		err = Replace(file, "", false, true, false, nil)
+		require.NoError(t, err)
+		output, err = os.ReadFile(file)
+		require.NoError(t, err)
+		assert.Equal(t, `package test
+
+import goerrs "github.com/domonda/go-errs"
+
+func Load(id string) (err error) {
+	defer goerrs.WrapWith1FuncParam(&err, id)
+
+	return nil
+}
+
+func Combine(list ...error) (err error) {
+	defer goerrs.WrapWith1FuncParam(&err, list)
+
+	return nil
+}
+`, string(output))
+	})
+
+	// The KeepSecret call of another alias is generated with the alias
+	// of the statement, which leaves the other alias unused
+	t.Run("unused alias removed", func(t *testing.T) {
+		const input = `package test
+
+import (
+	e "github.com/domonda/go-errs"
+	f "github.com/domonda/go-errs"
+)
+
+func Login(user, password string) (err error) {
+	defer e.WrapWithFuncParams(&err, user, f.KeepSecret(password))
+
+	return nil
+}
+`
+		file := filepath.Join(t.TempDir(), "login.go")
+		err := os.WriteFile(file, []byte(input), 0600)
+		require.NoError(t, err)
+
+		err = Replace(file, "", false, true, false, nil)
+		require.NoError(t, err)
+		output, err := os.ReadFile(file)
+		require.NoError(t, err)
+		assert.Equal(t, `package test
+
+import (
+	e "github.com/domonda/go-errs"
+)
+
+func Login(user, password string) (err error) {
+	defer e.WrapWith2FuncParams(&err, user, e.KeepSecret(password))
+
+	return nil
+}
+`, string(output))
+	})
+}
+
+// TestInsertImportsErrsOnce verifies that the new statements of a file
+// without go-errs import share one import name that is free in all of them,
+// and that a file with a go-errs import uses it wherever it is not shadowed.
+func TestInsertImportsErrsOnce(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{
+			name: "without import",
+			input: `package test
+
+func Load(id string) (err error) {
+	return nil
+}
+
+func Combine(errs ...error) (err error) {
+	return nil
+}
+`,
+			want: `package test
+
+import goerrs "github.com/domonda/go-errs"
+
+func Load(id string) (err error) {
+	defer goerrs.WrapWith1FuncParam(&err, id)
+
+	return nil
+}
+
+func Combine(errs ...error) (err error) {
+	defer goerrs.WrapWith1FuncParam(&err, errs)
+
+	return nil
+}
+`,
+		},
+		{
+			name: "different names shadowed",
+			input: `package test
+
+func Load(goerrs string) (err error) {
+	return nil
+}
+
+func Combine(errs ...error) (err error) {
+	return nil
+}
+`,
+			want: `package test
+
+import goerrs2 "github.com/domonda/go-errs"
+
+func Load(goerrs string) (err error) {
+	defer goerrs2.WrapWith1FuncParam(&err, goerrs)
+
+	return nil
+}
+
+func Combine(errs ...error) (err error) {
+	defer goerrs2.WrapWith1FuncParam(&err, errs)
+
+	return nil
+}
+`,
+		},
+		{
+			// The existing import is used by other code,
+			// so only the shadowing function needs another name
+			name: "with import",
+			input: `package test
+
+import "github.com/domonda/go-errs"
+
+var errNotFound = errs.New("not found")
+
+func Load(id string) (err error) {
+	return errNotFound
+}
+
+func Combine(errs ...error) (err error) {
+	return errNotFound
+}
+`,
+			want: `package test
+
+import (
+	"github.com/domonda/go-errs"
+	goerrs "github.com/domonda/go-errs"
+)
+
+var errNotFound = errs.New("not found")
+
+func Load(id string) (err error) {
+	defer errs.WrapWith1FuncParam(&err, id)
+
+	return errNotFound
+}
+
+func Combine(errs ...error) (err error) {
+	defer goerrs.WrapWith1FuncParam(&err, errs)
+
+	return errNotFound
+}
+`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			file := filepath.Join(t.TempDir(), "load.go")
+			err := os.WriteFile(file, []byte(tt.input), 0600)
+			require.NoError(t, err)
+
+			err = Insert(file, "", false, true, false, nil)
+			require.NoError(t, err)
+
+			output, err := os.ReadFile(file)
+			require.NoError(t, err)
+			assert.Equal(t, tt.want, string(output))
+		})
+	}
+}
+
+// TestRewriteAvoidsPackageLevelNames verifies that go-errs is not imported
+// under a name that another file of the package declares at package level,
+// including its test files but not the files of its external test package,
+// and that a call on a package level variable named errs
+// is not taken for a go-errs statement.
+func TestRewriteAvoidsPackageLevelNames(t *testing.T) {
+	const loadSource = `package test
+
+func Load(id string) (err error) {
+	defer errs.WrapUp(&err)
+
+	return nil
+}
+`
+	const wantLoad = `package test
+
+import goerrs2 "github.com/domonda/go-errs"
+
+func Load(id string) (err error) {
+	defer goerrs2.WrapWith1FuncParam(&err, id)
+
+	defer errs.WrapUp(&err)
+
+	return nil
+}
+`
+	writePackage := func(t *testing.T) string {
+		t.Helper()
+		dir := t.TempDir()
+		for name, content := range map[string]string{
+			"load.go":          loadSource,
+			"wrapper.go":       "package test\n\nvar errs wrapper\n\ntype wrapper struct{}\n\nfunc (wrapper) WrapUp(*error) {}\n",
+			"load_test.go":     "package test\n\nfunc goerrs() {}\n",
+			"external_test.go": "package test_test\n\nvar goerrs2 = 2\n",
+		} {
+			err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0600)
+			require.NoError(t, err)
+		}
+		return dir
+	}
+
+	t.Run("remove", func(t *testing.T) {
+		dir := writePackage(t)
+
+		err := Remove(dir, "", false, false, nil)
+		require.NoError(t, err)
+
+		output, err := os.ReadFile(filepath.Join(dir, "load.go"))
+		require.NoError(t, err)
+		assert.Equal(t, loadSource, string(output))
+	})
+
+	for name, path := range map[string]func(dir string) string{
+		"insert package": func(dir string) string { return dir },
+		"insert file":    func(dir string) string { return filepath.Join(dir, "load.go") },
+	} {
+		t.Run(name, func(t *testing.T) {
+			dir := writePackage(t)
+
+			err := Insert(path(dir), "", false, true, false, nil)
+			require.NoError(t, err)
+
+			output, err := os.ReadFile(filepath.Join(dir, "load.go"))
+			require.NoError(t, err)
+			assert.Equal(t, wantLoad, string(output))
+		})
+	}
+}
+
+// TestRewriteSingleFileOutputIsNotSource verifies that a single source file
+// is not written over itself by an output path that is the file or its
+// directory, also when spelled differently, while another file in its
+// directory can be the output.
+func TestRewriteSingleFileOutputIsNotSource(t *testing.T) {
+	const loadSource = `package test
+
+func Load(id string) (err error) {
+	return nil
+}
+`
+	dir := t.TempDir()
+	sourceFile := filepath.Join(dir, "load.go")
+	err := os.WriteFile(sourceFile, []byte(loadSource), 0600)
+	require.NoError(t, err)
+	linkDir := filepath.Join(t.TempDir(), "link")
+	err = os.Symlink(dir, linkDir)
+	require.NoError(t, err)
+
+	outPaths := map[string]string{
+		"directory":         dir,
+		"file":              sourceFile,
+		"directory link":    linkDir,
+		"file through link": filepath.Join(linkDir, "load.go"),
+	}
+	// On a case-insensitive file system, like the macOS default,
+	// another letter case spells the same file
+	upperSourceFile := filepath.Join(dir, "LOAD.go")
+	if _, err := os.Stat(upperSourceFile); err == nil {
+		outPaths["other letter case"] = upperSourceFile
+	}
+	for name, outPath := range outPaths {
+		t.Run(name, func(t *testing.T) {
+			err := Insert(sourceFile, outPath, false, true, false, nil)
+			require.ErrorContains(t, err, "must not be the source file")
+
+			output, err := os.ReadFile(sourceFile)
+			require.NoError(t, err)
+			assert.Equal(t, loadSource, string(output))
+		})
+	}
+
+	t.Run("other file in directory", func(t *testing.T) {
+		outFile := filepath.Join(dir, "load.output.go")
+		t.Cleanup(func() { os.Remove(outFile) })
+
+		err := Insert(sourceFile, outFile, false, true, false, nil)
+		require.NoError(t, err)
+
+		assertWrapAndErrsImport(t, outFile, "defer errs.WrapWith1FuncParam(&err, id)")
+		output, err := os.ReadFile(sourceFile)
+		require.NoError(t, err)
+		assert.Equal(t, loadSource, string(output))
+	})
+}
+
+// TestRewriteToOutputDirectoryLongFileName verifies that files with names
+// close to the maximum file name length of 255 bytes are written to the
+// output directory, whose temporary files must not have longer names.
+func TestRewriteToOutputDirectoryLongFileName(t *testing.T) {
+	sourceDir := t.TempDir()
+	longName := strings.Repeat("a", 240) + ".go"
+	err := os.WriteFile(filepath.Join(sourceDir, longName), []byte("package test\n\nfunc Load(id string) (err error) {\n\treturn nil\n}\n"), 0600)
+	require.NoError(t, err)
+	outDir := t.TempDir()
+
+	err = Insert(sourceDir, outDir, false, true, false, nil)
+	require.NoError(t, err)
+
+	assertWrapAndErrsImport(t, filepath.Join(outDir, longName), "defer errs.WrapWith1FuncParam(&err, id)")
 }

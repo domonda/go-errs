@@ -195,33 +195,38 @@ func Another(x string) error {
 	assert.Equal(t, "innerErr", innerCtx.errorResultName)
 }
 
-func TestErrsImportName(t *testing.T) {
+func TestErrsImportNames(t *testing.T) {
 	tests := []struct {
-		name    string
-		imports string
-		want    string
+		name         string
+		imports      string
+		wantNames    []string
+		wantImported bool
 	}{
-		{name: "no import", imports: `import "fmt"`, want: ""},
-		{name: "unnamed", imports: `import "github.com/domonda/go-errs"`, want: "errs"},
-		{name: "aliased", imports: `import e "github.com/domonda/go-errs"`, want: "e"},
+		{name: "no import", imports: `import "fmt"`},
+		{name: "unnamed", imports: `import "github.com/domonda/go-errs"`, wantNames: []string{"errs"}, wantImported: true},
+		{name: "aliased", imports: `import e "github.com/domonda/go-errs"`, wantNames: []string{"e"}, wantImported: true},
 		{
-			name: "unnamed preferred over aliased",
+			name: "unnamed first",
 			imports: `import (
 	e "github.com/domonda/go-errs"
+	f "github.com/domonda/go-errs"
 	"github.com/domonda/go-errs"
 )`,
-			want: "errs",
+			wantNames:    []string{"errs", "e", "f"},
+			wantImported: true,
 		},
 		// Generated code can't reference a blank or dot import
-		{name: "blank", imports: `import _ "github.com/domonda/go-errs"`, want: ""},
-		{name: "dot", imports: `import . "github.com/domonda/go-errs"`, want: ""},
+		{name: "blank", imports: `import _ "github.com/domonda/go-errs"`, wantImported: true},
+		{name: "dot", imports: `import . "github.com/domonda/go-errs"`, wantImported: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			file, err := parser.ParseFile(token.NewFileSet(), "test.go", "package test\n\n"+tt.imports+"\n", parser.ImportsOnly)
 			require.NoError(t, err)
 
-			assert.Equal(t, tt.want, errsImportName(file))
+			names, imported := errsImportNames(file)
+			assert.Equal(t, tt.wantNames, names)
+			assert.Equal(t, tt.wantImported, imported)
 		})
 	}
 }
@@ -325,7 +330,9 @@ func Unrelated(x string) (err error) {
 	}
 }
 
-func TestImportsOtherErrsPackage(t *testing.T) {
+// TestOtherImportNamesErrs verifies which imports of other packages
+// are taken for a package named errs, whose name go-errs can't be imported under.
+func TestOtherImportNamesErrs(t *testing.T) {
 	tests := []struct {
 		name    string
 		imports string
@@ -344,7 +351,7 @@ func TestImportsOtherErrsPackage(t *testing.T) {
 			file, err := parser.ParseFile(token.NewFileSet(), "test.go", "package test\n\n"+tt.imports+"\n", parser.ImportsOnly)
 			require.NoError(t, err)
 
-			assert.Equal(t, tt.want, importsOtherErrsPackage(file))
+			assert.Equal(t, tt.want, otherImportNames(file)["errs"])
 		})
 	}
 }

@@ -15,8 +15,9 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"strconv"
+	"slices"
 	"strings"
+	"sync"
 
 	"github.com/ungerik/go-astvisit"
 	"golang.org/x/tools/go/ast/astutil"
@@ -138,6 +139,9 @@ func process(sourcePath, outPath string, recursive, minVariadic, validate bool, 
 		if overlap {
 			return errs.Errorf("output path %s must not be the source directory %s, be within it or contain it", outPath, sourcePath)
 		}
+	} else if isSameFile(sourcePath, singleFileOutputPath(sourcePath, outPath)) {
+		// The output path is the source file or its directory
+		return errs.Errorf("output path %s must not be the source file %s or its directory", outPath, sourcePath)
 	}
 
 	// Rewrite all files before writing any output, so that an error
@@ -170,10 +174,15 @@ func process(sourcePath, outPath string, recursive, minVariadic, validate bool, 
 // instead the missing changes are appended to validationErrors.
 func packageRewriter(minVariadic bool, mode processMode, verboseOut io.Writer, validationErrors *[]string) astvisit.RewritePackageFunc {
 	return func(pkg *astvisit.ParsedPackage, _ io.Writer) (map[string][]byte, error) {
+		// Only needed for files without a go-errs import or with
+		// a new go-errs import name, loaded once for all of them
+		loadPackageNames := sync.OnceValues(func() (map[string]bool, error) {
+			return packageNames(pkg)
+		})
 		rewritten := make(map[string][]byte)
 		for _, filePath := range pkg.FilePaths {
 			source := pkg.Sources[filePath]
-			replacements, imports, err := processFile(pkg.Fset, pkg.Files[filePath], minVariadic, verboseOut, mode)
+			replacements, imports, err := processFile(pkg.Fset, pkg.Files[filePath], loadPackageNames, minVariadic, verboseOut, mode)
 			if err != nil {
 				return nil, err
 			}
@@ -222,17 +231,20 @@ func packageRewriter(minVariadic bool, mode processMode, verboseOut io.Writer, v
 }
 
 // rewriteSource returns source of filePath with replacements applied
-// and formatted like gofmt. For remove, a go-errs import that is not used
-// anymore is removed, for replace and insert the missing imports are added.
+// and formatted like gofmt. For replace and insert the missing imports
+// are added, and a go-errs import that is not used anymore is removed.
 func rewriteSource(fset *token.FileSet, filePath string, source []byte, replacements astvisit.NodeReplacements, imports astvisit.Imports, mode processMode) ([]byte, error) {
 	rewritten, err := replacements.Apply(fset, source)
 	if err != nil {
 		return nil, err
 	}
-	if mode == modeRemove {
-		return removeUnusedErrsImports(filePath, rewritten)
+	if mode != modeRemove {
+		rewritten, err = astvisit.FormatSource(rewritten, imports)
+		if err != nil {
+			return nil, err
+		}
 	}
-	return astvisit.FormatSource(rewritten, imports)
+	return removeUnusedErrsImports(filePath, rewritten)
 }
 
 // removeUnusedErrsImports removes the imports of go-errs from source
@@ -300,16 +312,14 @@ func withLineEndingsOf(source, original []byte) []byte {
 // the file is written with the name of sourceFile into that directory,
 // which is created if missing.
 func writeFileOutput(sourceFile, outPath string, rewritten []byte, verboseOut io.Writer) error {
-	outInfo, err := os.Stat(outPath)
-	if err == nil && outInfo.IsDir() {
-		outPath = filepath.Join(outPath, filepath.Base(sourceFile))
-	} else if !strings.HasSuffix(outPath, ".go") {
-		err = os.MkdirAll(outPath, 0750)
+	outFile := singleFileOutputPath(sourceFile, outPath)
+	if outFile != outPath {
+		err := os.MkdirAll(outPath, 0750)
 		if err != nil {
 			return err
 		}
-		outPath = filepath.Join(outPath, filepath.Base(sourceFile))
 	}
+	outPath = outFile
 
 	sourceInfo, err := os.Stat(sourceFile)
 	if err != nil {
@@ -336,6 +346,44 @@ func writeFileOutput(sourceFile, outPath string, rewritten []byte, verboseOut io
 		fmt.Fprintf(verboseOut, "wrote: %s\n", outPath)
 	}
 	return nil
+}
+
+// singleFileOutputPath returns the path that the source file sourceFile
+// is written to for the output path outPath: outPath itself if it ends with .go
+// and is not an existing directory, else a file named like sourceFile
+// in the directory outPath.
+func singleFileOutputPath(sourceFile, outPath string) string {
+	outInfo, err := os.Stat(outPath)
+	isDir := err == nil && outInfo.IsDir()
+	if !isDir && strings.HasSuffix(outPath, ".go") {
+		return outPath
+	}
+	return filepath.Join(outPath, filepath.Base(sourceFile))
+}
+
+// isSameFile reports whether path1 and path2 are the same existing
+// directory entry, also when spelled differently, like another letter case
+// on a case-insensitive file system or a directory path through a link.
+// A link is not the same as the file it links to, because writeFile
+// replaces a link instead of writing through it.
+func isSameFile(path1, path2 string) bool {
+	dirInfo1, err := os.Stat(filepath.Dir(path1))
+	if err != nil {
+		return false
+	}
+	dirInfo2, err := os.Stat(filepath.Dir(path2))
+	if err != nil {
+		return false
+	}
+	info1, err := os.Lstat(path1)
+	if err != nil {
+		return false
+	}
+	info2, err := os.Lstat(path2)
+	if err != nil {
+		return false
+	}
+	return os.SameFile(dirInfo1, dirInfo2) && os.SameFile(info1, info2)
 }
 
 // writeDirectoryOutput copies the files below sourceDir, or without recursive
@@ -480,35 +528,51 @@ func resolvePath(path string) string {
 	return filepath.Join(resolvePath(parent), filepath.Base(path))
 }
 
-func processFile(fset *token.FileSet, astFile *ast.File, minVariadic bool, verboseOut io.Writer, mode processMode) (replacements astvisit.NodeReplacements, imports astvisit.Imports, err error) {
-	defer errs.WrapWithFuncParams(&err, fset, astFile, minVariadic, verboseOut, mode)
+// newStatement is a defer errs.Wrap statement that processFile generates
+// for a //#wrap-result-err marker or inserts into a function.
+type newStatement struct {
+	fun     *funcInfo
+	pos     token.Pos // where the name referencing go-errs must not be shadowed
+	node    ast.Node  // replaced by the statement
+	before  string    // before the statement in the replacement
+	after   string    // after the statement in the replacement
+	verb    string    // describes the replacement in verbose output
+	debugID string
+}
 
-	imports = make(astvisit.Imports)
+func processFile(fset *token.FileSet, astFile *ast.File, loadPackageNames func() (map[string]bool, error), minVariadic bool, verboseOut io.Writer, mode processMode) (replacements astvisit.NodeReplacements, imports astvisit.Imports, err error) {
+	defer errs.WrapWithFuncParams(&err, fset, astFile, loadPackageNames, minVariadic, verboseOut, mode)
 
-	// Extract all aliases used to import go-errs (for detecting KeepSecret calls)
-	errsAliases := extractErrsAliases(astFile)
-	// Generated statements use the name of an existing go-errs import.
-	// If the file has no usable one, or a declaration shadows its name
-	// where a statement is generated, go-errs is imported under a name
-	// that is free there and not used by another import: unnamed
-	// if no other package is imported as errs, else as goerrs, goerrs2 and so on.
-	errsName := errsImportName(astFile)
-	otherImportNames := otherImportNames(astFile)
-	addedErrsNames := make(map[string]bool)
-	errsNameAt := func(pos token.Pos) string {
-		if errsName != "" && !isShadowedAt(astFile, pos, errsName) {
-			return errsName
-		}
-		name := "errs"
-		if otherImportNames[name] || isShadowedAt(astFile, pos, name) {
-			name = "goerrs"
-			for i := 2; otherImportNames[name] || isShadowedAt(astFile, pos, name); i++ {
-				name = "goerrs" + strconv.Itoa(i)
-			}
-		}
-		addedErrsNames[name] = true
-		return name
+	errsNames, importsErrs := errsImportNames(astFile)
+	// isReserved reports whether go-errs can't be imported under name,
+	// because another import or a package level declaration has it.
+	// The package level names are only loaded for files that need them
+	otherNames := otherImportNames(astFile)
+	var packageNames map[string]bool
+	isReserved := func(name string) bool {
+		return otherNames[name] || packageNames[name]
 	}
+
+	// The names that reference go-errs in the file (for detecting its statements):
+	// the names of its go-errs imports, or errs for a file without such an import
+	errsAliases := make(map[string]bool)
+	for _, name := range errsNames {
+		errsAliases[name] = true
+	}
+	if !importsErrs {
+		packageNames, err = loadPackageNames()
+		if err != nil {
+			return nil, nil, err
+		}
+		if !isReserved("errs") {
+			errsAliases["errs"] = true
+		}
+	}
+
+	// The names that generated statements reference go-errs by
+	usedNames := make(map[string]bool)
+	// Statements for markers and insertions, generated after all are known
+	var newStatements []newStatement
 
 	// For insert mode, track which functions already have defer errs.Wrap
 	funcsWithWrap := make(map[token.Pos]bool)
@@ -568,7 +632,10 @@ func processFile(fset *token.FileSet, astFile *ast.File, minVariadic bool, verbo
 			// Extract KeepSecret-wrapped parameters from the existing defer statement
 			// so they can be preserved in the replacement
 			fun.keepSecretNames = extractKeepSecretParams(deferStmt, errsAliases)
-			fun.errsName = errsNameAt(deferStmt.Pos())
+			// Keep the name that the statement references go-errs by,
+			// so that a statement that is up to date stays unchanged
+			fun.errsName, _ = errsSelector(deferStmt.Call.Fun, errsAliases)
+			usedNames[fun.errsName] = true
 
 			// If already using variadic WrapWithFuncParams and minVariadic is false, keep it variadic
 			var replacement string
@@ -622,12 +689,13 @@ func processFile(fset *token.FileSet, astFile *ast.File, minVariadic bool, verbo
 					continue
 				}
 
-				ctx.errsName = errsNameAt(comment.Pos())
-				replacement := generateWrapStatement(ctx)
-				if verboseOut != nil {
-					fmt.Fprintf(verboseOut, "%s: replacing //#wrap-result-err with %s\n", fset.Position(comment.Pos()), replacement)
-				}
-				replacements.AddReplacement(comment, replacement, "replace //#wrap-result-err")
+				newStatements = append(newStatements, newStatement{
+					fun:     ctx,
+					pos:     comment.Pos(),
+					node:    comment,
+					verb:    "replacing //#wrap-result-err with",
+					debugID: "replace //#wrap-result-err",
+				})
 			}
 		}
 	}
@@ -675,38 +743,73 @@ func processFile(fset *token.FileSet, astFile *ast.File, minVariadic bool, verbo
 				return true // Skip functions without named error result
 			}
 
-			// Find the position to insert (after the opening brace of the function body)
-			fun.errsName = errsNameAt(funcBody.Lbrace)
-			statement := generateWrapStatement(fun)
+			// Insert after the opening brace of the function body,
+			// where no declaration of the body is in scope yet
+			stmt := newStatement{
+				fun:     fun,
+				pos:     funcBody.Lbrace,
+				verb:    "inserting",
+				debugID: "insert defer errs.Wrap",
+			}
 			if len(funcBody.List) == 0 {
-				// Empty function body - insert after opening brace
-				insertPos := funcBody.Lbrace + 1
-				if verboseOut != nil {
-					fmt.Fprintf(verboseOut, "%s: inserting %s\n", fset.Position(insertPos), statement)
-				}
-				// Use PosNode to create a zero-width insertion point
-				replacements.AddReplacement(astvisit.PosNode(insertPos), "\n\t"+statement+"\n", "insert defer errs.Wrap")
+				// Empty function body - insert after opening brace,
+				// PosNode is a zero-width insertion point
+				stmt.node = astvisit.PosNode(funcBody.Lbrace + 1)
+				stmt.before = "\n\t"
+				stmt.after = "\n"
 			} else {
 				// Insert before the first statement, with empty line after
-				firstStmt := funcBody.List[0]
-				if verboseOut != nil {
-					fmt.Fprintf(verboseOut, "%s: inserting %s\n", fset.Position(firstStmt.Pos()), statement)
-				}
-				// Use PosNode to create a zero-width insertion point before the first statement
-				replacements.AddReplacement(astvisit.PosNode(firstStmt.Pos()), statement+"\n\n\t", "insert defer errs.Wrap")
+				stmt.node = astvisit.PosNode(funcBody.List[0].Pos())
+				stmt.after = "\n\n\t"
 			}
+			newStatements = append(newStatements, stmt)
 
 			return true
 		})
 	}
 
+	// New statements reference go-errs by the first name of its imports that
+	// is not shadowed at their position. All others share one new import name,
+	// so that go-errs is imported at most once more
+	var fallbackPositions []token.Pos
+	for _, stmt := range newStatements {
+		stmt.fun.errsName = firstUnshadowedName(astFile, stmt.pos, errsNames)
+		if stmt.fun.errsName == "" {
+			fallbackPositions = append(fallbackPositions, stmt.pos)
+		}
+	}
+	if len(fallbackPositions) > 0 {
+		packageNames, err = loadPackageNames()
+		if err != nil {
+			return nil, nil, err
+		}
+		fallbackName := newErrsImportName(astFile, fallbackPositions, isReserved)
+		for _, stmt := range newStatements {
+			if stmt.fun.errsName == "" {
+				stmt.fun.errsName = fallbackName
+			}
+		}
+	}
+	for _, stmt := range newStatements {
+		statement := generateWrapStatement(stmt.fun)
+		if verboseOut != nil {
+			fmt.Fprintf(verboseOut, "%s: %s %s\n", fset.Position(stmt.node.Pos()), stmt.verb, statement)
+		}
+		replacements.AddReplacement(stmt.node, stmt.before+statement+stmt.after, stmt.debugID)
+		usedNames[stmt.fun.errsName] = true
+	}
+
 	if len(replacements) == 0 {
 		return nil, nil, nil
 	}
-	for name := range addedErrsNames {
-		if name == "errs" {
+	imports = make(astvisit.Imports)
+	for name := range usedNames {
+		switch {
+		case slices.Contains(errsNames, name):
+			// Imported under that name already
+		case name == "errs":
 			imports.Add("github.com/domonda/go-errs")
-		} else {
+		default:
 			imports.AddNamed(name, "github.com/domonda/go-errs")
 		}
 	}
@@ -714,49 +817,35 @@ func processFile(fset *token.FileSet, astFile *ast.File, minVariadic bool, verbo
 	return replacements, imports, nil
 }
 
+// errsSelector returns the package name and the selected name of expr
+// if it selects from the go-errs package by one of errsAliases, like errs.Wrap,
+// else empty strings. An identifier that the parser resolved to a declaration
+// of the file, like a parameter, shadows the package name.
+func errsSelector(expr ast.Expr, errsAliases map[string]bool) (pkg, name string) {
+	sel, ok := expr.(*ast.SelectorExpr)
+	if !ok {
+		return "", ""
+	}
+	ident, ok := sel.X.(*ast.Ident)
+	if !ok || !errsAliases[ident.Name] || ident.Obj != nil {
+		return "", ""
+	}
+	return ident.Name, sel.Sel.Name
+}
+
 // isDeferErrsWrap checks if a defer statement is calling errs.Wrap* function
 // using any of the known import aliases for go-errs.
 func isDeferErrsWrap(stmt *ast.DeferStmt, errsAliases map[string]bool) bool {
-	call, ok := stmt.Call.Fun.(*ast.SelectorExpr)
-	if !ok {
-		return false
-	}
-
-	ident, ok := call.X.(*ast.Ident)
-	if !ok {
-		return false
-	}
-
-	// An identifier resolved by the parser is a declaration
-	// of the file, like a parameter, that shadows the package name
-	if !errsAliases[ident.Name] || ident.Obj != nil {
-		return false
-	}
-
-	return strings.HasPrefix(call.Sel.Name, "Wrap")
+	_, name := errsSelector(stmt.Call.Fun, errsAliases)
+	return strings.HasPrefix(name, "Wrap")
 }
 
 // isVariadicWrapWithFuncParams checks if a defer statement is calling
 // the variadic errs.WrapWithFuncParams function (not a specialized version)
 // using any of the known import aliases for go-errs.
 func isVariadicWrapWithFuncParams(stmt *ast.DeferStmt, errsAliases map[string]bool) bool {
-	call, ok := stmt.Call.Fun.(*ast.SelectorExpr)
-	if !ok {
-		return false
-	}
-
-	ident, ok := call.X.(*ast.Ident)
-	if !ok {
-		return false
-	}
-
-	// An identifier resolved by the parser is a declaration
-	// of the file, like a parameter, that shadows the package name
-	if !errsAliases[ident.Name] || ident.Obj != nil {
-		return false
-	}
-
-	return call.Sel.Name == "WrapWithFuncParams"
+	_, name := errsSelector(stmt.Call.Fun, errsAliases)
+	return name == "WrapWithFuncParams"
 }
 
 // replacementChangesSource reports whether applying repl would actually
@@ -804,7 +893,8 @@ func copyFile(src string, root *os.Root, name string, perm os.FileMode) error {
 // instead of writing through it to the file it links to.
 // Symbolic links of the directories of name must not lead outside of root.
 func writeFile(root *os.Root, name string, r io.Reader, perm os.FileMode) (err error) {
-	tempName := filepath.Join(filepath.Dir(name), "."+filepath.Base(name)+"."+rand.Text())
+	// Not derived from name, which could make it longer than a file name may be
+	tempName := filepath.Join(filepath.Dir(name), ".go-errs-wrap-"+rand.Text())
 	file, err := root.OpenFile(tempName, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
 	if err != nil {
 		return err

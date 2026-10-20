@@ -2,11 +2,17 @@ package rewrite
 
 import (
 	"go/ast"
+	"go/parser"
 	"go/token"
+	"os"
 	"path"
+	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"unicode"
+
+	"github.com/ungerik/go-astvisit"
 )
 
 // funcInfo holds information about a function needed to generate
@@ -68,34 +74,24 @@ func isErrorType(expr ast.Expr) bool {
 // errsImportPath is the import path for the go-errs package.
 const errsImportPath = `"github.com/domonda/go-errs"`
 
-// extractErrsAliases returns a set of all names (aliases or default "errs")
-// used to import the go-errs package in the given file.
-func extractErrsAliases(file *ast.File) map[string]bool {
-	aliases := make(map[string]bool)
+// errsImportNames returns the names under which file imports the go-errs
+// package for use in code, the name of an unnamed import first, without
+// blank and dot imports, and whether file imports go-errs at all.
+func errsImportNames(file *ast.File) (names []string, imported bool) {
 	for _, imp := range file.Imports {
 		if imp.Path.Value != errsImportPath {
 			continue
 		}
-		if imp.Name != nil {
-			// Explicit alias: import alias "github.com/domonda/go-errs"
-			aliases[imp.Name.Name] = true
-		} else {
-			// Default import name is "errs" (last element of path)
-			aliases["errs"] = true
+		imported = true
+		switch {
+		case imp.Name == nil:
+			// The default import name is errs, the package name of go-errs
+			names = slices.Insert(names, 0, "errs")
+		case imp.Name.Name != "_" && imp.Name.Name != ".":
+			names = append(names, imp.Name.Name)
 		}
 	}
-	// If no import found, still check for "errs" as default,
-	// unless another imported package has that name
-	if len(aliases) == 0 && !importsOtherErrsPackage(file) {
-		aliases["errs"] = true
-	}
-	return aliases
-}
-
-// importsOtherErrsPackage reports whether file imports a package
-// other than go-errs under the name "errs".
-func importsOtherErrsPackage(file *ast.File) bool {
-	return otherImportNames(file)["errs"]
+	return names, imported
 }
 
 // otherImportNames returns the names under which file imports
@@ -141,21 +137,92 @@ func assumedPackageName(importPath string) string {
 	return base
 }
 
-// errsImportName returns the name under which file imports the go-errs package
-// for use in generated code, preferring an unnamed import over an aliased one.
-// It returns an empty string if file has no such import,
-// also if it only has a blank or dot import.
-func errsImportName(file *ast.File) (name string) {
-	for _, imp := range file.Imports {
-		if imp.Path.Value != errsImportPath {
+// packageNames returns the names declared at package level by the files
+// of pkg and by the test files in its directory that belong to the package,
+// because no file of the package can import a package under such a name.
+func packageNames(pkg *astvisit.ParsedPackage) (map[string]bool, error) {
+	names := make(map[string]bool)
+	for _, file := range pkg.Files {
+		addPackageNames(file, names)
+	}
+	// Test files are not parsed for the rewrite, but their declarations
+	// conflict with an import too when the package is tested
+	entries, err := os.ReadDir(pkg.Dir)
+	if err != nil {
+		return nil, err
+	}
+	fset := token.NewFileSet()
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), "_test.go") {
 			continue
 		}
-		if imp.Name == nil {
-			return "errs"
+		// A test file that can't be parsed doesn't compile anyway,
+		// the declarations parsed before the syntax error are still used
+		file, _ := parser.ParseFile(fset, filepath.Join(pkg.Dir, entry.Name()), nil, parser.SkipObjectResolution)
+		if file != nil && file.Name != nil && file.Name.Name == pkg.Name {
+			addPackageNames(file, names)
 		}
-		if imp.Name.Name != "_" && imp.Name.Name != "." {
-			name = imp.Name.Name
+	}
+	return names, nil
+}
+
+// addPackageNames adds the names declared at package level by file to names.
+func addPackageNames(file *ast.File, names map[string]bool) {
+	for _, decl := range file.Decls {
+		switch decl := decl.(type) {
+		case *ast.FuncDecl:
+			// Methods are not declared in the package block
+			if decl.Recv == nil {
+				names[decl.Name.Name] = true
+			}
+		case *ast.GenDecl:
+			for _, spec := range decl.Specs {
+				switch spec := spec.(type) {
+				case *ast.ValueSpec:
+					for _, name := range spec.Names {
+						names[name.Name] = true
+					}
+				case *ast.TypeSpec:
+					names[spec.Name.Name] = true
+				}
+			}
 		}
+	}
+}
+
+// firstUnshadowedName returns the first of names that is not shadowed
+// in file at pos, see isShadowedAt, or an empty string if all of them are.
+func firstUnshadowedName(file *ast.File, pos token.Pos, names []string) string {
+	for _, name := range names {
+		if !isShadowedAt(file, pos, name) {
+			return name
+		}
+	}
+	return ""
+}
+
+// newErrsImportName returns the name for a new import of go-errs into file
+// that is free at all positions: the first of errs, goerrs, goerrs2 and so on
+// that isReserved doesn't report as name of another import or a package level
+// declaration, and that is not shadowed at any of positions, see isShadowedAt.
+func newErrsImportName(file *ast.File, positions []token.Pos, isReserved func(name string) bool) string {
+	isFree := func(name string) bool {
+		if isReserved(name) {
+			return false
+		}
+		for _, pos := range positions {
+			if isShadowedAt(file, pos, name) {
+				return false
+			}
+		}
+		return true
+	}
+	if isFree("errs") {
+		return "errs"
+	}
+	name := "goerrs"
+	for i := 2; !isFree(name); i++ {
+		name = "goerrs" + strconv.Itoa(i)
 	}
 	return name
 }
@@ -165,7 +232,8 @@ func errsImportName(file *ast.File) (name string) {
 // Checked are the receivers, type parameters, parameters and results
 // of the functions enclosing pos, and the variables, constants and types
 // declared before pos in the blocks and statements enclosing it.
-// Package level declarations are not checked, they conflict with an import.
+// Package level declarations are not checked, they conflict with an import
+// in every file of the package, see packageNames.
 func isShadowedAt(file *ast.File, pos token.Pos, name string) (shadowed bool) {
 	declares := func(idents ...*ast.Ident) {
 		for _, ident := range idents {
@@ -284,13 +352,7 @@ func extractKeepSecretParams(stmt *ast.DeferStmt, errsAliases map[string]bool) m
 			continue
 		}
 
-		sel, ok := call.Fun.(*ast.SelectorExpr)
-		if !ok {
-			continue
-		}
-
-		ident, ok := sel.X.(*ast.Ident)
-		if !ok || !errsAliases[ident.Name] || ident.Obj != nil || sel.Sel.Name != "KeepSecret" {
+		if _, name := errsSelector(call.Fun, errsAliases); name != "KeepSecret" {
 			continue
 		}
 

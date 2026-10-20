@@ -51,6 +51,16 @@ func TestParsePathArgs(t *testing.T) {
 	})
 }
 
+func TestCheckCommand(t *testing.T) {
+	for _, command := range []string{"remove", "replace", "insert"} {
+		require.NoError(t, checkCommand(command), command)
+	}
+	require.EqualError(t, checkCommand("rename"), `unknown command "rename"`)
+	// An option before the command is not taken for the command and the
+	// command for the path, which reported an argument after the path
+	require.EqualError(t, checkCommand("-validate"), `unknown command "-validate", the command must come before the options`)
+}
+
 func TestCheckOutFlag(t *testing.T) {
 	tests := []struct {
 		name    string

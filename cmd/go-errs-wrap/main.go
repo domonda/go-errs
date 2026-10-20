@@ -112,6 +112,11 @@ func main() {
 	}
 
 	command := os.Args[1]
+	if err := checkCommand(command); err != nil {
+		fmt.Fprintln(os.Stderr, "error:", err)
+		printUsage()
+		os.Exit(1)
+	}
 
 	// Create a new FlagSet for parsing flags after the command
 	fs := flag.NewFlagSet(command, flag.ExitOnError)
@@ -150,16 +155,27 @@ func main() {
 		err = rewrite.Replace(sourcePath, outPath, recursive, minVariadic, validate, verboseOut)
 	case "insert":
 		err = rewrite.Insert(sourcePath, outPath, recursive, minVariadic, validate, verboseOut)
-	default:
-		fmt.Fprintf(os.Stderr, "error: unknown command %q\n", command) // #nosec G705 -- CLI stderr output, not HTTP response
-		printUsage()
-		os.Exit(1)
 	}
 
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "error:", errs.UnwrapCallStack(err))
 		os.Exit(1)
 	}
+}
+
+// checkCommand returns an error if command is not one of the commands.
+// It is checked before the options are parsed, so that an option passed
+// before the command, like -validate, is reported as unknown command
+// instead of taking the command for the path.
+func checkCommand(command string) error {
+	switch command {
+	case "remove", "replace", "insert":
+		return nil
+	}
+	if strings.HasPrefix(command, "-") {
+		return fmt.Errorf("unknown command %q, the command must come before the options", command)
+	}
+	return fmt.Errorf("unknown command %q", command)
 }
 
 // checkOutFlag returns an error if the -out flag was passed with an empty
@@ -238,7 +254,8 @@ Options:
                     it or contain it, and its symbolic links to directories
                     must not lead outside of it.
                   - If source is file: write to the output path if it ends
-                    with .go, else into that directory, created if missing
+                    with .go, else into that directory, created if missing.
+                    The output file must not be the source file.
   -validate       Dry run mode: check for issues without modifying files. Reports issues
                   to stderr and exits with error code 1 if any are found. Useful for CI
                   validation to ensure code quality standards are met.
