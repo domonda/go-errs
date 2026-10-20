@@ -94,23 +94,31 @@ func extractErrsAliases(file *ast.File) map[string]bool {
 
 // importsOtherErrsPackage reports whether file imports a package
 // other than go-errs under the name "errs".
-// For an unnamed import the name is guessed from the import path.
 func importsOtherErrsPackage(file *ast.File) bool {
+	return otherImportNames(file)["errs"]
+}
+
+// otherImportNames returns the names under which file imports
+// packages other than go-errs, without blank and dot imports.
+// For an unnamed import the name is guessed from the import path.
+func otherImportNames(file *ast.File) map[string]bool {
+	names := make(map[string]bool)
 	for _, imp := range file.Imports {
 		if imp.Path.Value == errsImportPath {
 			continue
 		}
-		name := ""
-		if imp.Name != nil {
-			name = imp.Name.Name
-		} else if importPath, err := strconv.Unquote(imp.Path.Value); err == nil {
-			name = assumedPackageName(importPath)
-		}
-		if name == "errs" {
-			return true
+		switch {
+		case imp.Name != nil:
+			names[imp.Name.Name] = true
+		default:
+			if importPath, err := strconv.Unquote(imp.Path.Value); err == nil {
+				names[assumedPackageName(importPath)] = true
+			}
 		}
 	}
-	return false
+	delete(names, "_")
+	delete(names, ".")
+	return names
 }
 
 // assumedPackageName guesses the package name of an import path

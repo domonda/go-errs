@@ -126,6 +126,10 @@ func main() {
 		printUsage()
 		os.Exit(0)
 	}
+	if err := checkOutFlag(fs); err != nil {
+		fmt.Fprintln(os.Stderr, "error:", err)
+		os.Exit(1)
+	}
 
 	sourcePath, recursive, err := parsePathArgs(fs.Args())
 	if err != nil {
@@ -156,6 +160,18 @@ func main() {
 		fmt.Fprintln(os.Stderr, "error:", errs.UnwrapCallStack(err))
 		os.Exit(1)
 	}
+}
+
+// checkOutFlag returns an error if the -out flag was passed with an empty
+// path, like an unset variable in a script, which would otherwise
+// silently modify the source files in place.
+func checkOutFlag(fs *flag.FlagSet) (err error) {
+	fs.Visit(func(f *flag.Flag) {
+		if f.Name == "out" && f.Value.String() == "" {
+			err = errors.New("-out needs a non-empty path")
+		}
+	})
+	return err
 }
 
 // parsePathArgs returns the source path from the arguments left after
@@ -219,7 +235,8 @@ Options:
                     All other files are copied unchanged, except version control
                     metadata, symbolic links to directories and special files.
                     The output path must not be the source directory, be within
-                    it or contain it.
+                    it or contain it, and its symbolic links to directories
+                    must not lead outside of it.
                   - If source is file: write to the output path if it ends
                     with .go, else into that directory, created if missing
   -validate       Dry run mode: check for issues without modifying files. Reports issues

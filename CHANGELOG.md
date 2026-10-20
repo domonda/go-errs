@@ -40,9 +40,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   non-Go files and the rewritten ones, except version control metadata, symbolic
   links to directories and special files. It refuses an output path that is the
   source directory, is within it or contains it, also when spelled differently,
-  because the output overwrote source files. Output files replace existing files
-  and links instead of writing through them, and are writable by their owner,
-  so read-only sources can be written to the output again.
+  because the output overwrote source files. All output stays within the output
+  path: a symbolic link to a directory in it that leads outside is an error.
+  Output files replace existing files and links instead of writing through them,
+  and are writable by their owner, so read-only sources can be written to the
+  output again. A single file is written with the permissions of its source.
+- `go-errs-wrap -out ""`, like an unset variable in a script, is an error instead
+  of modifying the source files in place.
 - Requires Go 1.26 instead of Go 1.24, for all modules.
 
 ### Fixed
@@ -57,8 +61,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   statements instead of adding a second, unnamed import that left the alias unused.
 - Where a receiver, type parameter, parameter or local declaration shadows the
   name of the `go-errs` import, like a parameter `errs ...error`, `go-errs-wrap`
-  imports `go-errs` once more under a free name (unnamed, or `goerrs`, `goerrs2`
-  and so on) instead of generating a call on the shadowing variable. A method
+  imports `go-errs` once more under a name that is free there and not used by
+  another import (unnamed, or `goerrs`, `goerrs2` and so on) instead of
+  generating a call on the shadowing variable. A method
   call on such a variable, like `defer e.WrapUp()` with a parameter `e`, is no
   longer taken for a `go-errs` statement.
 - `go-errs-wrap -out` writes its output only after all files were rewritten,

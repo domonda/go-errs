@@ -348,3 +348,20 @@ func TestImportsOtherErrsPackage(t *testing.T) {
 		})
 	}
 }
+
+func TestOtherImportNames(t *testing.T) {
+	file, err := parser.ParseFile(token.NewFileSet(), "test.go", `package test
+
+import (
+	"fmt"
+	_ "embed"
+	. "strings"
+	goerrs "github.com/go-errors/errors"
+	"github.com/domonda/go-errs"
+	"example.com/errs/v2"
+)
+`, parser.ImportsOnly)
+	require.NoError(t, err)
+
+	assert.Equal(t, map[string]bool{"fmt": true, "goerrs": true, "errs": true}, otherImportNames(file))
+}

@@ -471,7 +471,10 @@ func TestCopyFile(t *testing.T) {
 
 	// Copy file
 	dstPath := filepath.Join(tmpDir, "dest.txt")
-	err = copyFile(srcPath, dstPath, 0644)
+	root, err := os.OpenRoot(tmpDir)
+	require.NoError(t, err)
+	defer root.Close()
+	err = copyFile(srcPath, root, "dest.txt", 0644)
 	require.NoError(t, err)
 
 	// Verify content
@@ -2640,6 +2643,33 @@ func Outer() {
 `,
 		},
 		{
+			name: "fallback name used by another import",
+			rewrite: func(sourcePath string) error {
+				return Insert(sourcePath, "", false, true, false, nil)
+			},
+			input: `package test
+
+import goerrs "github.com/go-errors/errors"
+
+func Combine(errs ...error) (err error) {
+	return goerrs.New("combined")
+}
+`,
+			want: `package test
+
+import (
+	goerrs2 "github.com/domonda/go-errs"
+	goerrs "github.com/go-errors/errors"
+)
+
+func Combine(errs ...error) (err error) {
+	defer goerrs2.WrapWith1FuncParam(&err, errs)
+
+	return goerrs.New("combined")
+}
+`,
+		},
+		{
 			name: "method call on shadowing parameter",
 			rewrite: func(sourcePath string) error {
 				return Remove(sourcePath, "", false, false, nil)
@@ -2692,4 +2722,68 @@ func Close(e *Entry) (err error) {
 			assert.Equal(t, tt.want, string(output))
 		})
 	}
+}
+
+// TestRewriteToOutputDirectoryStaysWithin verifies that a symbolic link to a
+// directory in an existing output directory can't make the output overwrite
+// files outside of it, like the source files.
+func TestRewriteToOutputDirectoryStaysWithin(t *testing.T) {
+	const loadSource = `package test
+
+func Load(id string) (err error) {
+	return nil
+}
+`
+	sourceDir := t.TempDir()
+	err := os.MkdirAll(filepath.Join(sourceDir, "sub"), 0750)
+	require.NoError(t, err)
+	for _, relPath := range []string{"load.go", filepath.Join("sub", "load.go")} {
+		err = os.WriteFile(filepath.Join(sourceDir, relPath), []byte(loadSource), 0600)
+		require.NoError(t, err)
+	}
+	elsewhereDir := t.TempDir()
+	err = os.WriteFile(filepath.Join(elsewhereDir, "load.go"), []byte(loadSource), 0600)
+	require.NoError(t, err)
+
+	for name, linkTarget := range map[string]string{
+		"link to source":    sourceDir,
+		"link to elsewhere": elsewhereDir,
+	} {
+		t.Run(name, func(t *testing.T) {
+			outDir := t.TempDir()
+			err := os.Symlink(linkTarget, filepath.Join(outDir, "sub"))
+			require.NoError(t, err)
+
+			err = Insert(sourceDir, outDir, true, true, false, nil)
+			require.Error(t, err)
+
+			for _, path := range []string{
+				filepath.Join(sourceDir, "load.go"),
+				filepath.Join(sourceDir, "sub", "load.go"),
+				filepath.Join(elsewhereDir, "load.go"),
+			} {
+				output, err := os.ReadFile(path)
+				require.NoError(t, err)
+				assert.Equal(t, loadSource, string(output), path)
+			}
+		})
+	}
+}
+
+// TestRewriteSingleFileOutputKeepsPermissions verifies that a single file
+// written to an output path gets the permissions of the source file.
+func TestRewriteSingleFileOutputKeepsPermissions(t *testing.T) {
+	sourceFile := filepath.Join(t.TempDir(), "load.go")
+	err := os.WriteFile(sourceFile, []byte("package test\n\nfunc Load(id string) (err error) {\n\treturn nil\n}\n"), 0600)
+	require.NoError(t, err)
+	err = os.Chmod(sourceFile, 0644)
+	require.NoError(t, err)
+	outFile := filepath.Join(t.TempDir(), "load.go")
+
+	err = Insert(sourceFile, outFile, false, true, false, nil)
+	require.NoError(t, err)
+
+	info, err := os.Stat(outFile)
+	require.NoError(t, err)
+	assert.Equal(t, os.FileMode(0644), info.Mode().Perm())
 }

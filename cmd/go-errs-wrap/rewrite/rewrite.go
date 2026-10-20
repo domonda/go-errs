@@ -5,6 +5,7 @@ package rewrite
 
 import (
 	"bytes"
+	"crypto/rand"
 	"errors"
 	"fmt"
 	"go/ast"
@@ -139,8 +140,9 @@ func process(sourcePath, outPath string, recursive, minVariadic, validate bool, 
 		}
 	}
 
-	// Rewrite all files before writing any output,
-	// so an error doesn't leave a partially written output
+	// Rewrite all files before writing any output, so that an error
+	// of the rewrite doesn't leave a partially written output,
+	// errors while writing the output still can
 	rewritten := make(map[string][]byte)
 	rewritePackage := packageRewriter(minVariadic, mode, verboseOut, nil)
 	_, err = astvisit.RewriteDryRun(path, nil, func(pkg *astvisit.ParsedPackage, verboseOut io.Writer) (map[string][]byte, error) {
@@ -292,7 +294,8 @@ func withLineEndingsOf(source, original []byte) []byte {
 }
 
 // writeFileOutput writes the rewritten source of sourceFile,
-// or its unchanged source if rewritten is nil, to outPath.
+// or its unchanged source if rewritten is nil, to outPath
+// with the permissions of sourceFile, see writeFile.
 // If outPath is an existing directory or doesn't end with .go,
 // the file is written with the name of sourceFile into that directory,
 // which is created if missing.
@@ -308,6 +311,10 @@ func writeFileOutput(sourceFile, outPath string, rewritten []byte, verboseOut io
 		outPath = filepath.Join(outPath, filepath.Base(sourceFile))
 	}
 
+	sourceInfo, err := os.Stat(sourceFile)
+	if err != nil {
+		return err
+	}
 	if rewritten == nil {
 		// #nosec G304 -- sourceFile is the file path passed by the user
 		rewritten, err = os.ReadFile(sourceFile)
@@ -315,7 +322,13 @@ func writeFileOutput(sourceFile, outPath string, rewritten []byte, verboseOut io
 			return err
 		}
 	}
-	err = writeFile(outPath, bytes.NewReader(rewritten), 0640)
+
+	root, err := os.OpenRoot(filepath.Dir(outPath))
+	if err != nil {
+		return err
+	}
+	defer root.Close()
+	err = writeFile(root, filepath.Base(outPath), bytes.NewReader(rewritten), sourceInfo.Mode().Perm()|0200)
 	if err != nil {
 		return err
 	}
@@ -330,20 +343,36 @@ func writeFileOutput(sourceFile, outPath string, rewritten []byte, verboseOut io
 // sources instead of the original ones of the files in rewritten.
 // Version control metadata and files that are not regular files
 // or symbolic links to regular files are not copied.
+// All files are written within outDir, symbolic links in outDir
+// that lead outside of it are an error, see writeFile.
 // Copied files and directories are writable by the owner,
 // so that the output can be written again.
 func writeDirectoryOutput(sourceDir, outDir string, recursive bool, rewritten map[string][]byte, verboseOut io.Writer) error {
 	// filepath.Walk doesn't follow a symbolic link as root
-	root, err := filepath.EvalSymlinks(sourceDir)
+	sourceRoot, err := filepath.EvalSymlinks(sourceDir)
 	if err != nil {
 		return err
 	}
-	return filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+	sourceRootInfo, err := os.Stat(sourceRoot)
+	if err != nil {
+		return err
+	}
+	err = os.MkdirAll(outDir, sourceRootInfo.Mode().Perm()|0700)
+	if err != nil {
+		return err
+	}
+	outRoot, err := os.OpenRoot(outDir)
+	if err != nil {
+		return err
+	}
+	defer outRoot.Close()
+
+	return filepath.Walk(sourceRoot, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
 
-		relPath, err := filepath.Rel(root, path)
+		relPath, err := filepath.Rel(sourceRoot, path)
 		if err != nil {
 			return err
 		}
@@ -352,10 +381,13 @@ func writeDirectoryOutput(sourceDir, outDir string, recursive bool, rewritten ma
 		destPath := filepath.Join(outDir, relPath)
 
 		if info.IsDir() {
-			if path != root && (!recursive || isVCSMetadata(info.Name())) {
+			if path == sourceRoot {
+				return nil
+			}
+			if !recursive || isVCSMetadata(info.Name()) {
 				return filepath.SkipDir
 			}
-			return os.MkdirAll(destPath, info.Mode().Perm()|0700)
+			return outRoot.MkdirAll(relPath, info.Mode().Perm()|0700)
 		}
 		if isVCSMetadata(info.Name()) {
 			// Like the .git file of a git worktree
@@ -382,12 +414,12 @@ func writeDirectoryOutput(sourceDir, outDir string, recursive bool, rewritten ma
 			if verboseOut != nil {
 				fmt.Fprintf(verboseOut, "wrote: %s\n", destPath)
 			}
-			return writeFile(destPath, bytes.NewReader(source), info.Mode().Perm()|0200)
+			return writeFile(outRoot, relPath, bytes.NewReader(source), info.Mode().Perm()|0200)
 		}
 		if verboseOut != nil {
 			fmt.Fprintf(verboseOut, "copying: %s -> %s\n", sourcePath, destPath)
 		}
-		return copyFile(path, destPath, info.Mode().Perm()|0200)
+		return copyFile(path, outRoot, relPath, info.Mode().Perm()|0200)
 	})
 }
 
@@ -458,19 +490,19 @@ func processFile(fset *token.FileSet, astFile *ast.File, minVariadic bool, verbo
 	// Generated statements use the name of an existing go-errs import.
 	// If the file has no usable one, or a declaration shadows its name
 	// where a statement is generated, go-errs is imported under a name
-	// that is free there: unnamed if no other package is imported as errs,
-	// else as goerrs, goerrs2 and so on.
+	// that is free there and not used by another import: unnamed
+	// if no other package is imported as errs, else as goerrs, goerrs2 and so on.
 	errsName := errsImportName(astFile)
-	otherErrsPackage := importsOtherErrsPackage(astFile)
+	otherImportNames := otherImportNames(astFile)
 	addedErrsNames := make(map[string]bool)
 	errsNameAt := func(pos token.Pos) string {
 		if errsName != "" && !isShadowedAt(astFile, pos, errsName) {
 			return errsName
 		}
 		name := "errs"
-		if otherErrsPackage || isShadowedAt(astFile, pos, name) {
+		if otherImportNames[name] || isShadowedAt(astFile, pos, name) {
 			name = "goerrs"
-			for i := 2; isShadowedAt(astFile, pos, name); i++ {
+			for i := 2; otherImportNames[name] || isShadowedAt(astFile, pos, name); i++ {
 				name = "goerrs" + strconv.Itoa(i)
 			}
 		}
@@ -755,8 +787,8 @@ func replacementChangesSource(fset *token.FileSet, source []byte, repl astvisit.
 	}
 }
 
-// copyFile copies the file src to dst with perm, see writeFile.
-func copyFile(src, dst string, perm os.FileMode) error {
+// copyFile copies the file src to name within root with perm, see writeFile.
+func copyFile(src string, root *os.Root, name string, perm os.FileMode) error {
 	// #nosec G304 -- src is a file below the source directory found by filepath.Walk
 	source, err := os.Open(src)
 	if err != nil {
@@ -764,20 +796,22 @@ func copyFile(src, dst string, perm os.FileMode) error {
 	}
 	defer source.Close()
 
-	return writeFile(dst, source, perm)
+	return writeFile(root, name, source, perm)
 }
 
 // writeFile writes the content of r with perm to a new file that replaces
-// path, so that a hard or symbolic link at path is replaced instead of
-// writing through it to the file it links to.
-func writeFile(path string, r io.Reader, perm os.FileMode) (err error) {
-	file, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".*")
+// name within root, so that a hard or symbolic link at name is replaced
+// instead of writing through it to the file it links to.
+// Symbolic links of the directories of name must not lead outside of root.
+func writeFile(root *os.Root, name string, r io.Reader, perm os.FileMode) (err error) {
+	tempName := filepath.Join(filepath.Dir(name), "."+filepath.Base(name)+"."+rand.Text())
+	file, err := root.OpenFile(tempName, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
 	if err != nil {
 		return err
 	}
 	defer func() {
 		if err != nil {
-			_ = os.Remove(file.Name())
+			_ = root.Remove(tempName)
 		}
 	}()
 
@@ -789,5 +823,5 @@ func writeFile(path string, r io.Reader, perm os.FileMode) (err error) {
 	if err != nil {
 		return err
 	}
-	return os.Rename(file.Name(), path)
+	return root.Rename(tempName, name)
 }

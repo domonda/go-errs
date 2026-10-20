@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"path/filepath"
 	"testing"
 
@@ -48,4 +49,32 @@ func TestParsePathArgs(t *testing.T) {
 		_, _, err := parsePathArgs([]string{"./...", "-validate"})
 		require.ErrorContains(t, err, `unexpected argument "-validate"`)
 	})
+}
+
+func TestCheckOutFlag(t *testing.T) {
+	tests := []struct {
+		name    string
+		args    []string
+		wantErr bool
+	}{
+		{name: "not passed", args: []string{"./..."}},
+		{name: "path", args: []string{"-out", "./out", "./..."}},
+		// Like -out "$OUTDIR" with OUTDIR unset
+		{name: "empty path", args: []string{"-out", "", "./..."}, wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fs := flag.NewFlagSet("insert", flag.ContinueOnError)
+			fs.String("out", "", "")
+			err := fs.Parse(tt.args)
+			require.NoError(t, err)
+
+			err = checkOutFlag(fs)
+			if tt.wantErr {
+				require.ErrorContains(t, err, "-out needs a non-empty path")
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
 }
