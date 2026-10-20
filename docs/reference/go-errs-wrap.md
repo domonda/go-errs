@@ -65,7 +65,7 @@ below it; `go.work` is not read.
 
 | Option          | Description                                          |
 | --------------- | --------------------------------------------------- |
-| `-out <path>`   | Write results to `<path>` instead of modifying the source in place. A directory source produces a copy of the directory, or of the whole directory tree with `/...`, in which only the rewritten Go files differ; version control metadata (`.git`, `.hg`, `.svn`), symbolic links to directories and special files are not copied, and `<path>` must not be the source directory, be within it or contain it. Symbolic links to directories in an existing `<path>` must not lead outside of it. An empty `<path>` is an error. A file source is written to `<path>` if it ends in `.go`, otherwise into the directory `<path>`, which is created if missing. Ignored when `-validate` is set. |
+| `-out <path>`   | Write results to `<path>` instead of modifying the source in place. A directory source produces a copy of the directory, or of the whole directory tree with `/...`, in which only the rewritten Go files differ; version control metadata (`.git`, `.hg`, `.svn`), symbolic links to directories and special files are not copied, and `<path>` must not be the source directory, be within it or contain it. Symbolic links to directories in an existing `<path>` must not lead outside of it. An empty `<path>` is an error. A file source is written to `<path>` if it ends in `.go`, otherwise into the directory `<path>`, which is created if missing; that output file must not be the source file. Ignored when `-validate` is set. |
 | `-minvariadic`  | Always emit the specialized `WrapWithNFuncParams` variant instead of preserving an existing variadic `WrapWithFuncParams` call |
 | `-validate`     | Dry-run: modify nothing, report issues to stderr, exit `1` if any are found. For CI |
 | `-verbose`      | Print progress to stdout                            |
@@ -102,7 +102,17 @@ processed: a directory skips them, and passing one as `<path>` is an error.
 `&err` uses the function's actual named error result. A missing
 `github.com/domonda/go-errs` import is added automatically and the imports are
 then grouped with `goimports`. Otherwise the rewritten file is formatted like
-`gofmt`, keeping its existing import groups.
+`gofmt`, keeping its existing import groups. A `go-errs` import that nothing
+uses anymore after the rewrite is removed.
+
+Statements reference `go-errs` by the name of its import in the file, and
+`replace` keeps the name an existing statement uses. Where a receiver, type
+parameter, parameter or local declaration shadows the name of the import, and in
+a file without `go-errs` import, the new statements share one name that is free
+in all of them and is neither the name of another import nor declared at package
+level in a file or test file of the package: `errs`, else `goerrs`, `goerrs2` and
+so on. `go-errs` is imported under that name, so a file imports it at most once
+more.
 
 ## The `//#wrap-result-err` marker
 

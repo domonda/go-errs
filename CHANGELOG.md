@@ -5,7 +5,7 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [v1.1.0] - 2026-10-20
+## [1.1.0] - 2026-10-20
 
 ### Changed
 
@@ -44,10 +44,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   path: a symbolic link to a directory in it that leads outside is an error.
   Output files replace existing files and links instead of writing through them,
   and are writable by their owner, so read-only sources can be written to the
-  output again. A single file is written with the permissions of its source.
+  output again. A single file is written with the permissions of its source,
+  and an output path that is the source file or its directory is an error.
 - `go-errs-wrap -out ""`, like an unset variable in a script, is an error instead
   of modifying the source files in place.
-- Requires Go 1.26 instead of Go 1.24, for all modules.
+- `go-errs-wrap` requires Go 1.26 instead of Go 1.24, the `go-errs` module
+  still requires Go 1.24.
 
 ### Fixed
 
@@ -55,17 +57,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   which `gen-func-wrappers` of go-function v1.0.0 requires: modules using both tools
   select that version for `go-errs-wrap` too, whose old import API it no longer has.
 - `LogFunctionCall` no longer reads a `%` in the formatted call as format verb.
-- `go-errs-wrap remove` without `-out` removes the `go-errs` import when nothing
-  uses it anymore, so the rewritten file compiles.
+- `go-errs-wrap` removes a `go-errs` import that nothing uses anymore after
+  the rewrite, like `remove` without `-out` left it, so the rewritten file compiles.
 - `go-errs-wrap` uses the name of an aliased `go-errs` import in generated
-  statements instead of adding a second, unnamed import that left the alias unused.
+  statements instead of adding a second, unnamed import that left the alias unused,
+  and `replace` keeps the name an existing statement uses, so that `replace -validate`
+  passes for statements that are up to date.
 - Where a receiver, type parameter, parameter or local declaration shadows the
-  name of the `go-errs` import, like a parameter `errs ...error`, `go-errs-wrap`
-  imports `go-errs` once more under a name that is free there and not used by
-  another import (unnamed, or `goerrs`, `goerrs2` and so on) instead of
-  generating a call on the shadowing variable. A method
-  call on such a variable, like `defer e.WrapUp()` with a parameter `e`, is no
-  longer taken for a `go-errs` statement.
+  name of the `go-errs` import, like a parameter `errs ...error`, and in a file
+  without `go-errs` import, `go-errs-wrap` generates the new statements with one
+  name that is free in all of them and imports `go-errs` under it (unnamed, or
+  `goerrs`, `goerrs2` and so on) instead of generating a call on the shadowing
+  variable. That name is neither used by another import nor declared at package
+  level in a file or test file of the package. A method call on a shadowing
+  variable, like `defer e.WrapUp()` with a parameter `e`, or on a package level
+  variable named `errs` in a file without `go-errs` import, is no longer taken
+  for a `go-errs` statement.
 - `go-errs-wrap -out` writes its output only after all files were rewritten,
   and keeps the CRLF line endings of rewritten files.
 - `go-errs-wrap` fails for an argument after the path instead of ignoring it, so
@@ -77,7 +84,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `go-errs-wrap` processes a path ending in `\...` recursively on Windows,
   like the `go` command.
 
-## [v1.0.4] - 2026-07-02
+## [1.0.4] - 2026-07-02
 
 ### Added
 
@@ -98,32 +105,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `TrimFilePathPrefix` now defaults to `""` and, when set, still trims the raw
   runtime path as before.
 
-## [v1.0.3] - 2026-04-16
+## [1.0.3] - 2026-04-16
 
 ### Fixed
 
 - `go-errs-wrap`: emit zero-parameter variadic wrap without a trailing comma.
 
-## [v1.0.2] - 2026-04-16
+## [1.0.2] - 2026-04-16
 
 ### Fixed
 
 - `go-errs-wrap`: skip no-op replacements to avoid import reordering.
 
-## [v1.0.1] - 2026-03-08
+## [1.0.1] - 2026-03-08
 
 ### Fixed
 
 - Add `nosec G703` annotations to suppress path-traversal false positives.
 - Apply `go fix ./...`.
 
-## [v1.0.0] - 2026-02-18
+## [1.0.0] - 2026-02-18
 
 Initial stable release.
 
-[v1.1.0]: https://github.com/domonda/go-errs/compare/v1.0.4...v1.1.0
-[v1.0.4]: https://github.com/domonda/go-errs/compare/v1.0.3...v1.0.4
-[v1.0.3]: https://github.com/domonda/go-errs/compare/v1.0.2...v1.0.3
-[v1.0.2]: https://github.com/domonda/go-errs/compare/v1.0.1...v1.0.2
-[v1.0.1]: https://github.com/domonda/go-errs/compare/v1.0.0...v1.0.1
-[v1.0.0]: https://github.com/domonda/go-errs/releases/tag/v1.0.0
+[1.1.0]: https://github.com/domonda/go-errs/compare/v1.0.4...v1.1.0
+[1.0.4]: https://github.com/domonda/go-errs/compare/v1.0.3...v1.0.4
+[1.0.3]: https://github.com/domonda/go-errs/compare/v1.0.2...v1.0.3
+[1.0.2]: https://github.com/domonda/go-errs/compare/v1.0.1...v1.0.2
+[1.0.1]: https://github.com/domonda/go-errs/compare/v1.0.0...v1.0.1
+[1.0.0]: https://github.com/domonda/go-errs/releases/tag/v1.0.0
