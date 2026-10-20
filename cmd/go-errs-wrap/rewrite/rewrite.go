@@ -14,6 +14,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/ungerik/go-astvisit"
@@ -126,10 +127,16 @@ func process(sourcePath, outPath string, recursive, minVariadic, validate bool, 
 	if err != nil {
 		return err
 	}
-	// Copying the source directory into itself or one of its parents
-	// would overwrite source files
-	if sourceInfo.IsDir() && isWithin(resolvePath(sourcePath), resolvePath(outPath)) {
-		return errs.Errorf("output path %s must not contain the source directory %s", outPath, sourcePath)
+	if sourceInfo.IsDir() {
+		// Writing the output into the source directory, or the source
+		// directory into one of its parents, would overwrite source files
+		overlap, err := directoriesOverlap(sourcePath, outPath)
+		if err != nil {
+			return err
+		}
+		if overlap {
+			return errs.Errorf("output path %s must not be the source directory %s, be within it or contain it", outPath, sourcePath)
+		}
 	}
 
 	// Rewrite all files before writing any output,
@@ -308,8 +315,7 @@ func writeFileOutput(sourceFile, outPath string, rewritten []byte, verboseOut io
 			return err
 		}
 	}
-	// #nosec G306,G703 -- 0640 is appropriate for generated Go source files, outPath is the path passed by the user
-	err = os.WriteFile(outPath, rewritten, 0640)
+	err = writeFile(outPath, bytes.NewReader(rewritten), 0640)
 	if err != nil {
 		return err
 	}
@@ -322,25 +328,31 @@ func writeFileOutput(sourceFile, outPath string, rewritten []byte, verboseOut io
 // writeDirectoryOutput copies the files below sourceDir, or without recursive
 // only the files directly in sourceDir, to outDir and writes the rewritten
 // sources instead of the original ones of the files in rewritten.
-// An outDir within sourceDir is not copied into itself.
 // Version control metadata and files that are not regular files
 // or symbolic links to regular files are not copied.
 // Copied files and directories are writable by the owner,
 // so that the output can be written again.
 func writeDirectoryOutput(sourceDir, outDir string, recursive bool, rewritten map[string][]byte, verboseOut io.Writer) error {
-	return filepath.Walk(sourceDir, func(path string, info os.FileInfo, err error) error {
+	// filepath.Walk doesn't follow a symbolic link as root
+	root, err := filepath.EvalSymlinks(sourceDir)
+	if err != nil {
+		return err
+	}
+	return filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
 
-		relPath, err := filepath.Rel(sourceDir, path)
+		relPath, err := filepath.Rel(root, path)
 		if err != nil {
 			return err
 		}
+		// astvisit names the files with the unresolved source directory
+		sourcePath := filepath.Join(sourceDir, relPath)
 		destPath := filepath.Join(outDir, relPath)
 
 		if info.IsDir() {
-			if path != sourceDir && (!recursive || path == outDir || isVCSMetadata(info.Name())) {
+			if path != root && (!recursive || isVCSMetadata(info.Name())) {
 				return filepath.SkipDir
 			}
 			return os.MkdirAll(destPath, info.Mode().Perm()|0700)
@@ -355,26 +367,25 @@ func writeDirectoryOutput(sourceDir, outDir string, recursive bool, rewritten ma
 			info, err = os.Stat(path)
 			if err != nil || !info.Mode().IsRegular() {
 				if verboseOut != nil {
-					fmt.Fprintf(verboseOut, "skipping symbolic link: %s\n", path)
+					fmt.Fprintf(verboseOut, "skipping symbolic link: %s\n", sourcePath)
 				}
 				return nil
 			}
 		} else if !info.Mode().IsRegular() {
 			if verboseOut != nil {
-				fmt.Fprintf(verboseOut, "skipping irregular file: %s\n", path)
+				fmt.Fprintf(verboseOut, "skipping irregular file: %s\n", sourcePath)
 			}
 			return nil
 		}
 
-		if source, ok := rewritten[path]; ok {
+		if source, ok := rewritten[sourcePath]; ok {
 			if verboseOut != nil {
 				fmt.Fprintf(verboseOut, "wrote: %s\n", destPath)
 			}
-			// #nosec G306,G703 -- the permissions of the source file, paths are constructed via filepath.Join
-			return os.WriteFile(destPath, source, info.Mode().Perm()|0200)
+			return writeFile(destPath, bytes.NewReader(source), info.Mode().Perm()|0200)
 		}
 		if verboseOut != nil {
-			fmt.Fprintf(verboseOut, "copying: %s -> %s\n", path, destPath)
+			fmt.Fprintf(verboseOut, "copying: %s -> %s\n", sourcePath, destPath)
 		}
 		return copyFile(path, destPath, info.Mode().Perm()|0200)
 	})
@@ -390,9 +401,41 @@ func isVCSMetadata(name string) bool {
 	return false
 }
 
+// directoriesOverlap reports whether outPath is the directory sourceDir,
+// is within it, or contains it. Directories are compared by their identity,
+// so that other spellings of the same directory are found too, like another
+// letter case on a case-insensitive file system or a path through a link.
+func directoriesOverlap(sourceDir, outPath string) (bool, error) {
+	sourceInfo, err := os.Stat(sourceDir)
+	if err != nil {
+		return false, err
+	}
+	// outPath, or its longest existing prefix, is sourceDir or within it
+	for dir := resolvePath(outPath); ; dir = filepath.Dir(dir) {
+		if info, err := os.Stat(dir); err == nil && os.SameFile(info, sourceInfo) {
+			return true, nil
+		}
+		if filepath.Dir(dir) == dir {
+			break
+		}
+	}
+	// An existing outPath contains sourceDir
+	if outInfo, err := os.Stat(outPath); err == nil {
+		for dir := filepath.Dir(resolvePath(sourceDir)); ; dir = filepath.Dir(dir) {
+			if info, err := os.Stat(dir); err == nil && os.SameFile(info, outInfo) {
+				return true, nil
+			}
+			if filepath.Dir(dir) == dir {
+				break
+			}
+		}
+	}
+	return false, nil
+}
+
 // resolvePath returns the absolute path with all symbolic links of its
-// longest existing prefix evaluated, so that paths can be compared
-// even if path does not exist yet.
+// longest existing prefix evaluated, so that its existing parent directories
+// are the actual ones, even if path does not exist yet.
 func resolvePath(path string) string {
 	resolved, err := filepath.EvalSymlinks(path)
 	if err == nil {
@@ -405,12 +448,6 @@ func resolvePath(path string) string {
 	return filepath.Join(resolvePath(parent), filepath.Base(path))
 }
 
-// isWithin reports whether path equals dir or is below it.
-func isWithin(path, dir string) bool {
-	rel, err := filepath.Rel(dir, path)
-	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
-}
-
 func processFile(fset *token.FileSet, astFile *ast.File, minVariadic bool, verboseOut io.Writer, mode processMode) (replacements astvisit.NodeReplacements, imports astvisit.Imports, err error) {
 	defer errs.WrapWithFuncParams(&err, fset, astFile, minVariadic, verboseOut, mode)
 
@@ -419,21 +456,26 @@ func processFile(fset *token.FileSet, astFile *ast.File, minVariadic bool, verbo
 	// Extract all aliases used to import go-errs (for detecting KeepSecret calls)
 	errsAliases := extractErrsAliases(astFile)
 	// Generated statements use the name of an existing go-errs import.
-	// The import is added if the file has no usable one,
-	// or if a function declares a name that shadows the import name,
-	// unnamed or named goerrs if another package is imported as errs.
+	// If the file has no usable one, or a declaration shadows its name
+	// where a statement is generated, go-errs is imported under a name
+	// that is free there: unnamed if no other package is imported as errs,
+	// else as goerrs, goerrs2 and so on.
 	errsName := errsImportName(astFile)
-	addedErrsName := "errs"
-	if importsOtherErrsPackage(astFile) {
-		addedErrsName = "goerrs"
-	}
-	needErrsImport := false
+	otherErrsPackage := importsOtherErrsPackage(astFile)
+	addedErrsNames := make(map[string]bool)
 	errsNameAt := func(pos token.Pos) string {
-		if errsName == "" || (errsName != "errs" && isShadowedAt(astFile, pos, errsName)) {
-			needErrsImport = true
-			return addedErrsName
+		if errsName != "" && !isShadowedAt(astFile, pos, errsName) {
+			return errsName
 		}
-		return errsName
+		name := "errs"
+		if otherErrsPackage || isShadowedAt(astFile, pos, name) {
+			name = "goerrs"
+			for i := 2; isShadowedAt(astFile, pos, name); i++ {
+				name = "goerrs" + strconv.Itoa(i)
+			}
+		}
+		addedErrsNames[name] = true
+		return name
 	}
 
 	// For insert mode, track which functions already have defer errs.Wrap
@@ -604,7 +646,7 @@ func processFile(fset *token.FileSet, astFile *ast.File, minVariadic bool, verbo
 			// Find the position to insert (after the opening brace of the function body)
 			fun.errsName = errsNameAt(funcBody.Lbrace)
 			statement := generateWrapStatement(fun)
-			if funcBody == nil || len(funcBody.List) == 0 {
+			if len(funcBody.List) == 0 {
 				// Empty function body - insert after opening brace
 				insertPos := funcBody.Lbrace + 1
 				if verboseOut != nil {
@@ -629,11 +671,11 @@ func processFile(fset *token.FileSet, astFile *ast.File, minVariadic bool, verbo
 	if len(replacements) == 0 {
 		return nil, nil, nil
 	}
-	if needErrsImport {
-		if addedErrsName == "errs" {
+	for name := range addedErrsNames {
+		if name == "errs" {
 			imports.Add("github.com/domonda/go-errs")
 		} else {
-			imports.AddNamed(addedErrsName, "github.com/domonda/go-errs")
+			imports.AddNamed(name, "github.com/domonda/go-errs")
 		}
 	}
 
@@ -653,7 +695,9 @@ func isDeferErrsWrap(stmt *ast.DeferStmt, errsAliases map[string]bool) bool {
 		return false
 	}
 
-	if !errsAliases[ident.Name] {
+	// An identifier resolved by the parser is a declaration
+	// of the file, like a parameter, that shadows the package name
+	if !errsAliases[ident.Name] || ident.Obj != nil {
 		return false
 	}
 
@@ -674,7 +718,9 @@ func isVariadicWrapWithFuncParams(stmt *ast.DeferStmt, errsAliases map[string]bo
 		return false
 	}
 
-	if !errsAliases[ident.Name] {
+	// An identifier resolved by the parser is a declaration
+	// of the file, like a parameter, that shadows the package name
+	if !errsAliases[ident.Name] || ident.Obj != nil {
 		return false
 	}
 
@@ -709,8 +755,8 @@ func replacementChangesSource(fset *token.FileSet, source []byte, repl astvisit.
 	}
 }
 
-// copyFile copies the file src to dst, creating dst with perm if it doesn't exist.
-func copyFile(src, dst string, perm os.FileMode) (err error) {
+// copyFile copies the file src to dst with perm, see writeFile.
+func copyFile(src, dst string, perm os.FileMode) error {
 	// #nosec G304 -- src is a file below the source directory found by filepath.Walk
 	source, err := os.Open(src)
 	if err != nil {
@@ -718,15 +764,30 @@ func copyFile(src, dst string, perm os.FileMode) (err error) {
 	}
 	defer source.Close()
 
-	// #nosec G302,G304 -- the permissions of the source file, dst is constructed via filepath.Join
-	dest, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, perm)
+	return writeFile(dst, source, perm)
+}
+
+// writeFile writes the content of r with perm to a new file that replaces
+// path, so that a hard or symbolic link at path is replaced instead of
+// writing through it to the file it links to.
+func writeFile(path string, r io.Reader, perm os.FileMode) (err error) {
+	file, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".*")
 	if err != nil {
 		return err
 	}
 	defer func() {
-		err = errors.Join(err, dest.Close())
+		if err != nil {
+			_ = os.Remove(file.Name())
+		}
 	}()
 
-	_, err = io.Copy(dest, source)
-	return err
+	_, err = io.Copy(file, r)
+	if err == nil {
+		err = file.Chmod(perm)
+	}
+	err = errors.Join(err, file.Close())
+	if err != nil {
+		return err
+	}
+	return os.Rename(file.Name(), path)
 }

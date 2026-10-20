@@ -1777,6 +1777,63 @@ func Load(id string) (err error) {
 `,
 		},
 		{
+			name: "aliased still used",
+			input: `package test
+
+import e "github.com/domonda/go-errs"
+
+var errNotFound = e.New("not found")
+
+func Load(id string) (err error) {
+	defer e.WrapWithFuncParams(&err, id)
+
+	return errNotFound
+}
+`,
+			want: `package test
+
+import e "github.com/domonda/go-errs"
+
+var errNotFound = e.New("not found")
+
+func Load(id string) (err error) {
+
+	return errNotFound
+}
+`,
+		},
+		{
+			name: "dot import kept",
+			input: `package test
+
+import (
+	. "github.com/domonda/go-errs"
+	"github.com/domonda/go-errs"
+)
+
+var errNotFound = New("not found")
+
+func Load(id string) (err error) {
+	defer errs.WrapWithFuncParams(&err, id)
+
+	return errNotFound
+}
+`,
+			want: `package test
+
+import (
+	. "github.com/domonda/go-errs"
+)
+
+var errNotFound = New("not found")
+
+func Load(id string) (err error) {
+
+	return errNotFound
+}
+`,
+		},
+		{
 			name: "still used",
 			input: `package test
 
@@ -2214,11 +2271,10 @@ func TestRewriteKeepsCRLFLineEndings(t *testing.T) {
 	})
 }
 
-// TestRewriteOutputDirectoryAndSourceOverlap verifies that an output
-// directory inside a recursively processed source directory is neither
-// copied into itself nor rewritten, also when writing it again,
-// and that an output path containing the source directory is rejected
-// before anything is written, because it would overwrite source files.
+// TestRewriteOutputDirectoryAndSourceOverlap verifies that an output path
+// that is the source directory, is within it or contains it is rejected
+// before anything is written, because the output would overwrite source
+// files, also for another spelling of the same directory.
 func TestRewriteOutputDirectoryAndSourceOverlap(t *testing.T) {
 	const loadSource = `package test
 
@@ -2226,49 +2282,121 @@ func Load(id string) (err error) {
 	return nil
 }
 `
-	newSourceDir := func(t *testing.T) string {
-		t.Helper()
-		sourceDir := t.TempDir()
-		err := os.MkdirAll(filepath.Join(sourceDir, "sub"), 0750)
+	parentDir := t.TempDir()
+	sourceDir := filepath.Join(parentDir, "src")
+	err := os.MkdirAll(filepath.Join(sourceDir, "sub"), 0750)
+	require.NoError(t, err)
+	for _, relPath := range []string{"load.go", filepath.Join("sub", "load.go")} {
+		err = os.WriteFile(filepath.Join(sourceDir, relPath), []byte(loadSource), 0600)
 		require.NoError(t, err)
-		err = os.WriteFile(filepath.Join(sourceDir, "sub", "load.go"), []byte(loadSource), 0600)
-		require.NoError(t, err)
-		return sourceDir
 	}
+	linkToSource := filepath.Join(parentDir, "link")
+	err = os.Symlink(sourceDir, linkToSource)
+	require.NoError(t, err)
 
-	t.Run("output inside source", func(t *testing.T) {
-		sourceDir := newSourceDir(t)
-		outDir := filepath.Join(sourceDir, "out")
+	outPaths := map[string]string{
+		"source":                 sourceDir,
+		"existing sub-directory": filepath.Join(sourceDir, "sub"),
+		"new sub-directory":      filepath.Join(sourceDir, "out"),
+		"parent":                 parentDir,
+		"through link":           filepath.Join(linkToSource, "out"),
+	}
+	// On a case-insensitive file system, like the macOS default,
+	// another letter case spells the same directory
+	upperSourceDir := filepath.Join(parentDir, "SRC")
+	if _, err := os.Stat(upperSourceDir); err == nil {
+		outPaths["other letter case"] = upperSourceDir
+	}
+	for name, outPath := range outPaths {
+		t.Run(name, func(t *testing.T) {
+			for _, recursive := range []bool{true, false} {
+				err := Insert(sourceDir, outPath, recursive, true, false, nil)
+				require.ErrorContains(t, err, "must not be the source directory")
+			}
+			for _, relPath := range []string{"load.go", filepath.Join("sub", "load.go")} {
+				output, err := os.ReadFile(filepath.Join(sourceDir, relPath))
+				require.NoError(t, err)
+				assert.Equal(t, loadSource, string(output), relPath)
+			}
+			assert.NoDirExists(t, filepath.Join(sourceDir, "out"))
+			assert.NoFileExists(t, filepath.Join(parentDir, "load.go"))
+		})
+	}
+}
 
-		for range 2 {
-			err := Insert(sourceDir, outDir, true, true, false, nil)
-			require.NoError(t, err)
-		}
+// TestRewriteToOutputDirectoryReplacesLinks verifies that files in the output
+// directory are replaced, not written through, so that an output tree of hard
+// or symbolic links to the source files, like a copy made with cp -al,
+// doesn't change the source files.
+func TestRewriteToOutputDirectoryReplacesLinks(t *testing.T) {
+	const loadSource = `package test
 
-		assertWrapAndErrsImport(t, filepath.Join(outDir, "sub", "load.go"), "defer errs.WrapWith1FuncParam(&err, id)")
-		assert.NoDirExists(t, filepath.Join(outDir, "out"))
-		output, err := os.ReadFile(filepath.Join(sourceDir, "sub", "load.go"))
+func Load(id string) (err error) {
+	return nil
+}
+`
+	sourceDir := t.TempDir()
+	err := os.WriteFile(filepath.Join(sourceDir, "load.go"), []byte(loadSource), 0600)
+	require.NoError(t, err)
+	err = os.WriteFile(filepath.Join(sourceDir, "notes.txt"), []byte("notes\n"), 0600)
+	require.NoError(t, err)
+	outDir := t.TempDir()
+	err = os.Link(filepath.Join(sourceDir, "load.go"), filepath.Join(outDir, "load.go"))
+	require.NoError(t, err)
+	err = os.Symlink(filepath.Join(sourceDir, "notes.txt"), filepath.Join(outDir, "notes.txt"))
+	require.NoError(t, err)
+
+	err = Insert(sourceDir, outDir, false, true, false, nil)
+	require.NoError(t, err)
+
+	assertWrapAndErrsImport(t, filepath.Join(outDir, "load.go"), "defer errs.WrapWith1FuncParam(&err, id)")
+	source, err := os.ReadFile(filepath.Join(sourceDir, "load.go"))
+	require.NoError(t, err)
+	assert.Equal(t, loadSource, string(source))
+	info, err := os.Lstat(filepath.Join(outDir, "notes.txt"))
+	require.NoError(t, err)
+	assert.True(t, info.Mode().IsRegular(), "notes.txt link replaced by a regular file")
+}
+
+// TestRewriteToOutputDirectoryFromLinkedSource verifies that a source
+// directory passed as symbolic link is copied and rewritten.
+func TestRewriteToOutputDirectoryFromLinkedSource(t *testing.T) {
+	realDir := filepath.Join(t.TempDir(), "real")
+	err := os.MkdirAll(realDir, 0750)
+	require.NoError(t, err)
+	err = os.WriteFile(filepath.Join(realDir, "load.go"), []byte("package test\n\nfunc Load(id string) (err error) {\n\treturn nil\n}\n"), 0600)
+	require.NoError(t, err)
+	linkDir := filepath.Join(t.TempDir(), "link")
+	err = os.Symlink(realDir, linkDir)
+	require.NoError(t, err)
+	outDir := t.TempDir()
+
+	err = Insert(linkDir, outDir, true, true, false, nil)
+	require.NoError(t, err)
+
+	assertWrapAndErrsImport(t, filepath.Join(outDir, "load.go"), "defer errs.WrapWith1FuncParam(&err, id)")
+}
+
+// TestRewriteToOutputDirectoryWritesNothingOnError verifies that no output
+// is written if rewriting any file fails, even for packages rewritten before.
+func TestRewriteToOutputDirectoryWritesNothingOnError(t *testing.T) {
+	sourceDir := t.TempDir()
+	for relPath, content := range map[string]string{
+		"a/a.go": "package a\n\nfunc A(id string) (err error) {\n\t//#wrap-result-err\n\n\treturn nil\n}\n",
+		// The marker after a statement on the same line becomes invalid code
+		"b/b.go": "package b\n\nfunc B(id string) (err error) {\n\tx := 1 //#wrap-result-err\n\t_ = x\n\treturn nil\n}\n",
+	} {
+		path := filepath.Join(sourceDir, filepath.FromSlash(relPath))
+		err := os.MkdirAll(filepath.Dir(path), 0750)
 		require.NoError(t, err)
-		assert.Equal(t, loadSource, string(output))
-	})
+		err = os.WriteFile(path, []byte(content), 0600)
+		require.NoError(t, err)
+	}
+	outDir := filepath.Join(t.TempDir(), "out")
 
-	t.Run("output contains source", func(t *testing.T) {
-		parentDir := t.TempDir()
-		sourceDir := filepath.Join(parentDir, "src")
-		err := os.MkdirAll(sourceDir, 0750)
-		require.NoError(t, err)
-		err = os.WriteFile(filepath.Join(sourceDir, "load.go"), []byte(loadSource), 0600)
-		require.NoError(t, err)
-
-		for _, outPath := range []string{sourceDir, parentDir} {
-			err = Insert(sourceDir, outPath, true, true, false, nil)
-			require.ErrorContains(t, err, "must not contain the source directory")
-		}
-		output, err := os.ReadFile(filepath.Join(sourceDir, "load.go"))
-		require.NoError(t, err)
-		assert.Equal(t, loadSource, string(output))
-		assert.NoFileExists(t, filepath.Join(parentDir, "load.go"))
-	})
+	err := Replace(sourceDir, outDir, true, true, false, nil)
+	require.Error(t, err)
+	assert.NoDirExists(t, outDir)
 }
 
 // TestRewriteToOutputDirectorySkipsSpecialFiles verifies how the output
@@ -2407,4 +2535,161 @@ func Load(id string) (err error) {
 		err = Replace(file, "", false, false, true, nil)
 		require.NoError(t, err)
 	})
+}
+
+// TestRewriteAvoidsShadowedErrsNames verifies that generated statements never
+// reference go-errs by a name that a parameter or local declaration shadows,
+// importing go-errs under a free name instead, and that a method call on such
+// a variable is not taken for a go-errs statement.
+func TestRewriteAvoidsShadowedErrsNames(t *testing.T) {
+	tests := []struct {
+		name    string
+		rewrite func(sourcePath string) error
+		input   string
+		want    string
+	}{
+		{
+			name: "marker in function shadowing alias",
+			rewrite: func(sourcePath string) error {
+				return Replace(sourcePath, "", false, true, false, nil)
+			},
+			input: `package test
+
+import e "github.com/domonda/go-errs"
+
+var errNotFound = e.New("not found")
+
+func Handle(e string) (err error) {
+	//#wrap-result-err
+
+	return errNotFound
+}
+`,
+			want: `package test
+
+import (
+	"github.com/domonda/go-errs"
+	e "github.com/domonda/go-errs"
+)
+
+var errNotFound = e.New("not found")
+
+func Handle(e string) (err error) {
+	defer errs.WrapWith1FuncParam(&err, e)
+
+	return errNotFound
+}
+`,
+		},
+		{
+			name: "parameter named errs",
+			rewrite: func(sourcePath string) error {
+				return Insert(sourcePath, "", false, true, false, nil)
+			},
+			input: `package test
+
+import "errors"
+
+func Combine(errs ...error) (err error) {
+	return errors.Join(errs...)
+}
+`,
+			want: `package test
+
+import (
+	"errors"
+
+	goerrs "github.com/domonda/go-errs"
+)
+
+func Combine(errs ...error) (err error) {
+	defer goerrs.WrapWith1FuncParam(&err, errs)
+
+	return errors.Join(errs...)
+}
+`,
+		},
+		{
+			name: "locals shadowing errs and goerrs",
+			rewrite: func(sourcePath string) error {
+				return Insert(sourcePath, "", false, true, false, nil)
+			},
+			input: `package test
+
+func Outer() {
+	errs, goerrs := 1, 2
+	f := func(id string) (err error) {
+		return nil
+	}
+	_, _, _ = errs, goerrs, f
+}
+`,
+			want: `package test
+
+import goerrs2 "github.com/domonda/go-errs"
+
+func Outer() {
+	errs, goerrs := 1, 2
+	f := func(id string) (err error) {
+		defer goerrs2.WrapWith1FuncParam(&err, id)
+
+		return nil
+	}
+	_, _, _ = errs, goerrs, f
+}
+`,
+		},
+		{
+			name: "method call on shadowing parameter",
+			rewrite: func(sourcePath string) error {
+				return Remove(sourcePath, "", false, false, nil)
+			},
+			input: `package test
+
+import e "github.com/domonda/go-errs"
+
+var errNotFound = e.New("not found")
+
+type Entry struct{}
+
+func (*Entry) WrapUp() {}
+
+func Close(e *Entry) (err error) {
+	defer e.WrapUp()
+
+	return errNotFound
+}
+`,
+			want: `package test
+
+import e "github.com/domonda/go-errs"
+
+var errNotFound = e.New("not found")
+
+type Entry struct{}
+
+func (*Entry) WrapUp() {}
+
+func Close(e *Entry) (err error) {
+	defer e.WrapUp()
+
+	return errNotFound
+}
+`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			file := filepath.Join(t.TempDir(), "load.go")
+			err := os.WriteFile(file, []byte(tt.input), 0600)
+			require.NoError(t, err)
+
+			err = tt.rewrite(file)
+			require.NoError(t, err)
+
+			output, err := os.ReadFile(file)
+			require.NoError(t, err)
+			assert.Equal(t, tt.want, string(output))
+		})
+	}
 }

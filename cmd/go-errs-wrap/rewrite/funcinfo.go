@@ -152,29 +152,94 @@ func errsImportName(file *ast.File) (name string) {
 	return name
 }
 
-// isShadowedAt reports whether name is declared as receiver, type parameter,
-// parameter or result of a function enclosing pos in file,
-// so that it does not refer to an imported package at pos.
+// isShadowedAt reports whether name is declared in file where it is in scope
+// at pos, so that it does not refer to an imported package there.
+// Checked are the receivers, type parameters, parameters and results
+// of the functions enclosing pos, and the variables, constants and types
+// declared before pos in the blocks and statements enclosing it.
+// Package level declarations are not checked, they conflict with an import.
 func isShadowedAt(file *ast.File, pos token.Pos, name string) (shadowed bool) {
+	declares := func(idents ...*ast.Ident) {
+		for _, ident := range idents {
+			if ident != nil && ident.Name == name {
+				shadowed = true
+			}
+		}
+	}
+	declaresFields := func(fieldLists ...*ast.FieldList) {
+		for _, fieldList := range fieldLists {
+			if fieldList != nil {
+				for _, field := range fieldList.List {
+					declares(field.Names...)
+				}
+			}
+		}
+	}
+	// declaresBefore checks the declarations of a statement
+	// whose scope continues after the statement and that ends before pos
+	declaresBefore := func(stmt ast.Stmt) {
+		if stmt == nil || stmt.End() > pos {
+			return
+		}
+		switch stmt := stmt.(type) {
+		case *ast.AssignStmt:
+			if stmt.Tok == token.DEFINE {
+				for _, expr := range stmt.Lhs {
+					if ident, ok := expr.(*ast.Ident); ok {
+						declares(ident)
+					}
+				}
+			}
+		case *ast.DeclStmt:
+			if genDecl, ok := stmt.Decl.(*ast.GenDecl); ok {
+				for _, spec := range genDecl.Specs {
+					switch spec := spec.(type) {
+					case *ast.ValueSpec:
+						declares(spec.Names...)
+					case *ast.TypeSpec:
+						declares(spec.Name)
+					}
+				}
+			}
+		}
+	}
+
 	ast.Inspect(file, func(n ast.Node) bool {
 		if shadowed || n == nil || pos < n.Pos() || pos > n.End() {
 			return false
 		}
-		var fieldLists []*ast.FieldList
 		switch node := n.(type) {
 		case *ast.FuncDecl:
-			fieldLists = []*ast.FieldList{node.Recv, node.Type.TypeParams, node.Type.Params, node.Type.Results}
+			declaresFields(node.Recv, node.Type.TypeParams, node.Type.Params, node.Type.Results)
 		case *ast.FuncLit:
-			fieldLists = []*ast.FieldList{node.Type.Params, node.Type.Results}
-		}
-		for _, fieldList := range fieldLists {
-			if fieldList == nil {
-				continue
+			declaresFields(node.Type.Params, node.Type.Results)
+		case *ast.BlockStmt:
+			for _, stmt := range node.List {
+				declaresBefore(stmt)
 			}
-			for _, field := range fieldList.List {
-				for _, ident := range field.Names {
-					if ident.Name == name {
-						shadowed = true
+		case *ast.CaseClause:
+			for _, stmt := range node.Body {
+				declaresBefore(stmt)
+			}
+		case *ast.CommClause:
+			declaresBefore(node.Comm)
+			for _, stmt := range node.Body {
+				declaresBefore(stmt)
+			}
+		case *ast.IfStmt:
+			declaresBefore(node.Init)
+		case *ast.ForStmt:
+			declaresBefore(node.Init)
+		case *ast.SwitchStmt:
+			declaresBefore(node.Init)
+		case *ast.TypeSwitchStmt:
+			declaresBefore(node.Init)
+			declaresBefore(node.Assign)
+		case *ast.RangeStmt:
+			if node.Tok == token.DEFINE && pos >= node.Body.Pos() {
+				for _, expr := range []ast.Expr{node.Key, node.Value} {
+					if ident, ok := expr.(*ast.Ident); ok {
+						declares(ident)
 					}
 				}
 			}
@@ -217,7 +282,7 @@ func extractKeepSecretParams(stmt *ast.DeferStmt, errsAliases map[string]bool) m
 		}
 
 		ident, ok := sel.X.(*ast.Ident)
-		if !ok || !errsAliases[ident.Name] || sel.Sel.Name != "KeepSecret" {
+		if !ok || !errsAliases[ident.Name] || ident.Obj != nil || sel.Sel.Name != "KeepSecret" {
 			continue
 		}
 

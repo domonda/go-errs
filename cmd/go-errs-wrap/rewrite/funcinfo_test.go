@@ -257,6 +257,27 @@ func Literal() (err error) {
 	return f("")
 }
 
+func Locals(x any) (err error) {
+	var e int
+	_ = e
+	if v, ok := x.(int); ok {
+		_ = v // if init
+	}
+	for k := range 3 {
+		_ = k // range
+	}
+	switch t := x.(type) {
+	case int:
+		_ = t // type switch
+	}
+	f := func() (err error) {
+		return nil // before own declaration
+	}
+	g := 1
+	_, _ = f, g
+	return nil // local var
+}
+
 func Unrelated(x string) (err error) {
 	return nil // unrelated
 }
@@ -277,6 +298,7 @@ func Unrelated(x string) (err error) {
 
 	for _, tt := range []struct {
 		comment string
+		name    string
 		want    bool
 	}{
 		{comment: "method", want: true},
@@ -285,9 +307,20 @@ func Unrelated(x string) (err error) {
 		{comment: "nested", want: true},
 		{comment: "literal", want: true},
 		{comment: "unrelated", want: false},
+		{comment: "local var", want: true},
+		{comment: "if init", name: "v", want: true},
+		{comment: "range", name: "k", want: true},
+		{comment: "type switch", name: "t", want: true},
+		{comment: "before own declaration", name: "f", want: false},
+		{comment: "before own declaration", name: "g", want: false},
+		{comment: "local var", name: "g", want: true},
 	} {
-		t.Run(tt.comment, func(t *testing.T) {
-			assert.Equal(t, tt.want, isShadowedAt(file, posOf(tt.comment), "e"))
+		name := tt.name
+		if name == "" {
+			name = "e"
+		}
+		t.Run(tt.comment+" "+name, func(t *testing.T) {
+			assert.Equal(t, tt.want, isShadowedAt(file, posOf(tt.comment), name))
 		})
 	}
 }

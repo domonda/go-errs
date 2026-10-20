@@ -17,22 +17,32 @@ functions that don't have them yet.
 	insert   Insert defer errs.Wrap at the first line of functions with named
 	         error results that don't already have one (followed by empty line)
 
+# Arguments
+
+The path is a Go file, a directory for its package, or a directory followed
+by /... for all packages below it, selected like the go command does.
+Options must come before the path. See go-errs-wrap -help for details.
+
 # Options
 
-	-out <path>   Output to different location instead of modifying source
-	-validate     Dry run mode: check for issues without modifying files. Reports issues
-	              to stderr and exits with error code 1 if any are found. Useful for CI
-	              validation to ensure code quality standards are met.
-	              - remove: checks if any defer errs.Wrap statements exist
-	              - replace: checks if any defer errs.Wrap statements need updating
-	              - insert: checks if any functions are missing defer errs.Wrap
-	-verbose      Print progress information
-	-help         Show help message
+	-out <path>    Output to different location instead of modifying source.
+	               A directory is copied with the rewritten files. Ignored with -validate.
+	-validate      Dry run mode: check for issues without modifying files. Reports issues
+	               to stderr and exits with error code 1 if any are found. Useful for CI
+	               validation to ensure code quality standards are met.
+	               - remove: checks if any defer errs.Wrap statements exist
+	               - replace: checks if any defer errs.Wrap statements need updating
+	               - insert: checks if any functions are missing defer errs.Wrap
+	-minvariadic   Use specialized WrapWithNFuncParams functions instead of
+	               preserving existing variadic WrapWithFuncParams calls
+	-verbose       Print progress information
+	-help          Show help message
 
 # Exit Codes
 
 	0   Success (no issues found in validate mode, or operation completed successfully)
 	1   Error occurred (validation failed, file not found, invalid arguments, etc.)
+	2   Invalid option (unknown flag or flag without value)
 
 # Examples
 
@@ -168,6 +178,10 @@ func parsePathArgs(args []string) (sourcePath string, recursive bool, err error)
 	// The go command also accepts the separator of the OS, like .\pkg\... on Windows
 	for _, suffix := range []string{"/...", string(filepath.Separator) + "..."} {
 		if before, ok := strings.CutSuffix(sourcePath, suffix); ok {
+			// Keep the separator of a root like / or C:\
+			if before == filepath.VolumeName(before) {
+				before += suffix[:1]
+			}
 			return before, true, nil
 		}
 	}
@@ -194,9 +208,9 @@ Arguments:
            Files are selected like the go command does: main packages are
            included, a directory skips files that need custom build tags and
            files starting with . or _, and /... also skips testdata, vendor,
-           directories starting with . or _, directories ignored by go.mod and
-           nested modules. A directory that is not within a module processes
-           all modules below it.
+           node_modules, directories starting with . or _, directories ignored
+           by go.mod and nested modules. Unlike the go command, /... on a
+           directory that is not within a module processes all modules below it.
 
 Options:
   -out <path>     Output to different location instead of modifying source
@@ -204,7 +218,8 @@ Options:
                     or of the directory tree with /..., with the rewritten files.
                     All other files are copied unchanged, except version control
                     metadata, symbolic links to directories and special files.
-                    The output path must not contain the source directory.
+                    The output path must not be the source directory, be within
+                    it or contain it.
                   - If source is file: write to the output path if it ends
                     with .go, else into that directory, created if missing
   -validate       Dry run mode: check for issues without modifying files. Reports issues
@@ -222,6 +237,7 @@ Options:
 Exit Codes:
   0   Success (no issues found in validate mode, or operation completed successfully)
   1   Error occurred (validation failed, file not found, invalid arguments, etc.)
+  2   Invalid option (unknown flag or flag without value)
 
 Examples:
   go-errs-wrap remove ./pkg/...

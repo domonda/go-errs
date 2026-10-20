@@ -20,6 +20,7 @@ func TestParsePathArgs(t *testing.T) {
 		{name: "recursive", args: []string{"./pkg/..."}, wantPath: "./pkg", wantRecursive: true},
 		{name: "current directory recursive", args: []string{"./..."}, wantPath: ".", wantRecursive: true},
 		{name: "bare dots", args: []string{"..."}, wantPath: ".", wantRecursive: true},
+		{name: "root", args: []string{"/..."}, wantPath: "/", wantRecursive: true},
 		{
 			name:          "OS separator",
 			args:          []string{"pkg" + string(filepath.Separator) + "..."},
