@@ -6,13 +6,35 @@ on:
   pull_request:
     branches:
       - master
+permissions:
+  contents: read
 jobs:
   tests:
     runs-on: ubuntu-latest
+    # gosec ./... in the repository root does not scan the packages
+    # of the go-errs-wrap module, also not when they are passed as
+    # pattern with go.work, so every module is scanned on its own
+    strategy:
+      matrix:
+        module:
+          - .
+          - cmd/go-errs-wrap
+    env:
+      GOWORK: "off"
+    defaults:
+      run:
+        working-directory: ${{ matrix.module }}
     steps:
       - name: Checkout Source
-        uses: actions/checkout@v6
-      - name: Run Gosec Security Scanner
-        uses: securego/gosec@master
+        uses: actions/checkout@v7
         with:
-          args: ./...
+          persist-credentials: false
+      # The Go version of go.work builds all modules. gosec can't type check
+      # with a newer Go than its golang.org/x/tools version supports
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.work
+          cache-dependency-path: ${{ matrix.module }}/go.sum
+      - name: Run Gosec Security Scanner
+        run: go run github.com/securego/gosec/v2/cmd/gosec@latest ./...

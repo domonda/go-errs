@@ -17,22 +17,32 @@ functions that don't have them yet.
 	insert   Insert defer errs.Wrap at the first line of functions with named
 	         error results that don't already have one (followed by empty line)
 
+# Arguments
+
+The path is a Go file, a directory for its package, or a directory followed
+by /... for all packages below it, selected like the go command does.
+Options must come before the path. See go-errs-wrap -help for details.
+
 # Options
 
-	-out <path>   Output to different location instead of modifying source
-	-validate     Dry run mode: check for issues without modifying files. Reports issues
-	              to stderr and exits with error code 1 if any are found. Useful for CI
-	              validation to ensure code quality standards are met.
-	              - remove: checks if any defer errs.Wrap statements exist
-	              - replace: checks if any defer errs.Wrap statements need updating
-	              - insert: checks if any functions are missing defer errs.Wrap
-	-verbose      Print progress information
-	-help         Show help message
+	-out <path>    Output to different location instead of modifying source.
+	               A directory is copied with the rewritten files. Ignored with -validate.
+	-validate      Dry run mode: check for issues without modifying files. Reports issues
+	               to stderr and exits with error code 1 if any are found. Useful for CI
+	               validation to ensure code quality standards are met.
+	               - remove: checks if any defer errs.Wrap statements exist
+	               - replace: checks if any defer errs.Wrap statements need updating
+	               - insert: checks if any functions are missing defer errs.Wrap
+	-minvariadic   Use specialized WrapWithNFuncParams functions instead of
+	               preserving existing variadic WrapWithFuncParams calls
+	-verbose       Print progress information
+	-help          Show help message
 
 # Exit Codes
 
 	0   Success (no issues found in validate mode, or operation completed successfully)
 	1   Error occurred (validation failed, file not found, invalid arguments, etc.)
+	2   Invalid option (unknown flag or flag without value)
 
 # Examples
 
@@ -67,10 +77,12 @@ Validate that all functions have error wrappers (for CI):
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/domonda/go-errs"
@@ -100,6 +112,11 @@ func main() {
 	}
 
 	command := os.Args[1]
+	if err := checkCommand(command); err != nil {
+		fmt.Fprintln(os.Stderr, "error:", err)
+		printUsage()
+		os.Exit(1)
+	}
 
 	// Create a new FlagSet for parsing flags after the command
 	fs := flag.NewFlagSet(command, flag.ExitOnError)
@@ -114,24 +131,16 @@ func main() {
 		printUsage()
 		os.Exit(0)
 	}
-
-	args := fs.Args()
-	if len(args) < 1 {
-		fmt.Fprintln(os.Stderr, "error: missing path argument")
-		printUsage()
+	if err := checkOutFlag(fs); err != nil {
+		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(1)
 	}
 
-	sourcePath := args[0]
-
-	// Check if user passed a "..." pattern (e.g., "./..." or "./pkg/...")
-	recursive := false
-	if before, ok := strings.CutSuffix(sourcePath, "/..."); ok {
-		sourcePath = before
-		recursive = true
-	} else if sourcePath == "..." {
-		sourcePath = "."
-		recursive = true
+	sourcePath, recursive, err := parsePathArgs(fs.Args())
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "error:", err)
+		printUsage()
+		os.Exit(1)
 	}
 
 	var verboseOut io.Writer
@@ -139,7 +148,6 @@ func main() {
 		verboseOut = os.Stdout
 	}
 
-	var err error
 	switch command {
 	case "remove":
 		err = rewrite.Remove(sourcePath, outPath, recursive, validate, verboseOut)
@@ -147,16 +155,69 @@ func main() {
 		err = rewrite.Replace(sourcePath, outPath, recursive, minVariadic, validate, verboseOut)
 	case "insert":
 		err = rewrite.Insert(sourcePath, outPath, recursive, minVariadic, validate, verboseOut)
-	default:
-		fmt.Fprintf(os.Stderr, "error: unknown command %q\n", command) // #nosec G705 -- CLI stderr output, not HTTP response
-		printUsage()
-		os.Exit(1)
 	}
 
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "error:", errs.UnwrapCallStack(err))
 		os.Exit(1)
 	}
+}
+
+// checkCommand returns an error if command is not one of the commands.
+// It is checked before the options are parsed, so that an option passed
+// before the command, like -validate, is reported as unknown command
+// instead of taking the command for the path.
+func checkCommand(command string) error {
+	switch command {
+	case "remove", "replace", "insert":
+		return nil
+	}
+	if strings.HasPrefix(command, "-") {
+		return fmt.Errorf("unknown command %q, the command must come before the options", command)
+	}
+	return fmt.Errorf("unknown command %q", command)
+}
+
+// checkOutFlag returns an error if the -out flag was passed with an empty
+// path, like an unset variable in a script, which would otherwise
+// silently modify the source files in place.
+func checkOutFlag(fs *flag.FlagSet) (err error) {
+	fs.Visit(func(f *flag.Flag) {
+		if f.Name == "out" && f.Value.String() == "" {
+			err = errors.New("-out needs a non-empty path")
+		}
+	})
+	return err
+}
+
+// parsePathArgs returns the source path from the arguments left after
+// parsing the flags, without a "..." pattern (e.g. "./..." or "./pkg/..."),
+// and whether such a pattern requested to process the path recursively.
+// The flag package stops parsing at the path, so an argument after the path
+// is an error instead of a flag that is ignored, like -validate in CI.
+func parsePathArgs(args []string) (sourcePath string, recursive bool, err error) {
+	switch {
+	case len(args) == 0:
+		return "", false, errors.New("missing path argument")
+	case len(args) > 1:
+		return "", false, fmt.Errorf("unexpected argument %q after path %q, options must come before the path", args[1], args[0])
+	}
+
+	sourcePath = args[0]
+	if sourcePath == "..." {
+		return ".", true, nil
+	}
+	// The go command also accepts the separator of the OS, like .\pkg\... on Windows
+	for _, suffix := range []string{"/...", string(filepath.Separator) + "..."} {
+		if before, ok := strings.CutSuffix(sourcePath, suffix); ok {
+			// Keep the separator of a root like / or C:\
+			if before == filepath.VolumeName(before) {
+				before += suffix[:1]
+			}
+			return before, true, nil
+		}
+	}
+	return sourcePath, false, nil
 }
 
 func printUsage() {
@@ -173,14 +234,28 @@ Commands:
 
 Arguments:
   path     Source directory or file path
-           - If directory: recursively process all *.go files (excluding *_test.go)
-           - If file: process only that file
+           - If file: process only that file (*_test.go files are never processed)
+           - If directory: process the Go package in that directory
+           - If directory/...: process all packages below the directory
+           Files are selected like the go command does: main packages are
+           included, a directory skips files that need custom build tags and
+           files starting with . or _, and /... also skips testdata, vendor,
+           node_modules, directories starting with . or _, directories ignored
+           by go.mod and nested modules. Unlike the go command, /... on a
+           directory that is not within a module processes all modules below it.
 
 Options:
   -out <path>     Output to different location instead of modifying source
-                  - If source is directory: create copy of directory structure
-                  - If source is file: write to specified file path
-                  - Non-Go files are copied unchanged
+                  - If source is directory: create a copy of the directory,
+                    or of the directory tree with /..., with the rewritten files.
+                    All other files are copied unchanged, except version control
+                    metadata, symbolic links to directories and special files.
+                    The output path must not be the source directory, be within
+                    it or contain it, and its symbolic links to directories
+                    must not lead outside of it.
+                  - If source is file: write to the output path if it ends
+                    with .go, else into that directory, created if missing.
+                    The output file must not be the source file.
   -validate       Dry run mode: check for issues without modifying files. Reports issues
                   to stderr and exits with error code 1 if any are found. Useful for CI
                   validation to ensure code quality standards are met.
@@ -196,6 +271,7 @@ Options:
 Exit Codes:
   0   Success (no issues found in validate mode, or operation completed successfully)
   1   Error occurred (validation failed, file not found, invalid arguments, etc.)
+  2   Invalid option (unknown flag or flag without value)
 
 Examples:
   go-errs-wrap remove ./pkg/...

@@ -536,8 +536,30 @@ The `go-errs-wrap` command-line tool helps manage `defer errs.WrapWithFuncParams
 
 ### Installation
 
+`go-errs-wrap` is the module `github.com/domonda/go-errs/cmd/go-errs-wrap`
+and needs `go-errs` v1.1.0 or newer in your module, so add `go-errs` first:
+
 ```bash
-go install github.com/domonda/go-errs/cmd/go-errs-wrap@latest
+go get github.com/domonda/go-errs@latest
+go get -tool github.com/domonda/go-errs/cmd/go-errs-wrap@latest
+```
+
+Run it with `go tool go-errs-wrap`, or install the `go-errs-wrap` binary
+from within your module with `go install github.com/domonda/go-errs/cmd/go-errs-wrap`.
+Older `go-errs` versions still contain the tool's packages, which makes its
+import ambiguous, and without a `go-errs` requirement the tool's own
+requirement on `go-errs` can't be resolved.
+`go install github.com/domonda/go-errs/cmd/go-errs-wrap@latest` does not work:
+the tool's module replaces `go-errs` with its local checkout.
+
+To keep the tool's dependencies, like `golang.org/x/tools`, out of your
+module's `go.mod`, add the tool to a separate tools module file instead:
+
+```bash
+mkdir tools && (cd tools && go mod init example.com/yourmodule/tools)
+go get -modfile=tools/go.mod github.com/domonda/go-errs@latest
+go get -modfile=tools/go.mod -tool github.com/domonda/go-errs/cmd/go-errs-wrap@latest
+go tool -modfile=tools/go.mod go-errs-wrap insert ./...
 ```
 
 ### Commands
@@ -556,7 +578,7 @@ go install github.com/domonda/go-errs/cmd/go-errs-wrap@latest
 # Process a single file
 go-errs-wrap insert ./pkg/mypackage/file.go
 
-# Process all Go files in a directory recursively
+# Process all packages below a directory, like go build ./pkg/...
 go-errs-wrap insert ./pkg/...
 ```
 
@@ -576,8 +598,8 @@ go-errs-wrap remove ./pkg/...
 **Write changes to another output location:**
 
 ```bash
-# Output to a different location
-go-errs-wrap insert -out ./output ./pkg/mypackage
+# Output a copy of the directory tree with the rewritten files
+go-errs-wrap insert -out ./output ./pkg/...
 
 # Show verbose progress
 go-errs-wrap insert -verbose ./pkg/...
@@ -651,7 +673,7 @@ This is preferable to omitting sensitive parameters entirely, as omitted paramet
 
 ## Compatibility
 
-- **Go version:** Requires Go 1.24+
+- **Go version:** Requires Go 1.24+, the `go-errs-wrap` tool requires Go 1.26+
 - **Error handling:** Fully compatible with `errors.Is`, `errors.As`, `errors.Unwrap`, and `errors.Join`
 - **Testing:** Use with `testify` or any testing framework
 - **Sentry:** Errors wrapped with a call stack are recognized by `sentry-go` (see below)

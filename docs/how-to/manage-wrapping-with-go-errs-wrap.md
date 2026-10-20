@@ -5,11 +5,14 @@ mechanically instead of by hand, and enforce their presence in CI.
 
 ## Prerequisites
 
-- Go 1.24 or newer.
-- The tool installed:
+- Go 1.26 or newer.
+- The tool added to your module and its `go-errs-wrap` binary installed
+  (see [Installation](../reference/go-errs-wrap.md#installation)):
 
   ```bash
-  go install github.com/domonda/go-errs/cmd/go-errs-wrap@latest
+  go get github.com/domonda/go-errs@latest
+  go get -tool github.com/domonda/go-errs/cmd/go-errs-wrap@latest
+  go install github.com/domonda/go-errs/cmd/go-errs-wrap
   ```
 
 - A version-controlled working tree — these commands rewrite files in place by
@@ -64,8 +67,8 @@ This deletes every `defer errs.Wrap*` statement and `//#wrap-result-err` marker.
 
 ## Useful flags
 
-- `-out ./somewhere` — write results to a separate tree instead of editing in
-  place (ignored with `-validate`).
+- `-out ./somewhere` — write results to a copy of the directory instead of
+  editing in place, of the whole tree with `/...` (ignored with `-validate`).
 - `-minvariadic` — always emit the specialized `WrapWithNFuncParams` variant
   rather than preserving an existing variadic call.
 - `-verbose` — print each change as it is made.
@@ -86,7 +89,8 @@ out of date; `remove -validate` fails if any wrap still exists.
 ## Verification
 
 - After `insert`/`replace`, run `go build ./...` and `go vet ./...`; the tool
-  re-sorts imports with `goimports`, so the result should compile cleanly.
+  adds a missing `github.com/domonda/go-errs` import, so the result should
+  compile cleanly.
 - Run the matching `-validate` command and confirm it exits `0` once the tree is
   in the desired state.
 
@@ -101,8 +105,14 @@ out of date; `remove -validate` fails if any wrap still exists.
   [redact-sensitive-parameters.md](redact-sensitive-parameters.md).
 - **A `//#wrap-result-err` marker was left untouched with a warning.** It was
   not inside a function body. Move it onto its own line inside the function.
-- **`_test.go` files were not changed.** Test files are skipped when processing a
-  directory; point the tool at the file directly if you need it.
+- **`_test.go` files were not changed.** Test files are never processed: a
+  directory skips them, and pointing the tool at one directly is an error.
+- **A file was not changed.** Like the `go` command, the tool skips files that
+  need custom build tags and files whose names start with `.` or `_` in a
+  directory (pass such a file as path to process it), and `/...`
+  also skips `testdata`, `vendor` and `node_modules` directories, directories
+  starting with `.` or `_`, directories the module's `go.mod` ignores, and nested
+  modules. Run the tool in a nested module's directory to process it.
 
 ## Related
 

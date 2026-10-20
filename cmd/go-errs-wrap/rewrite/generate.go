@@ -5,20 +5,28 @@ import (
 	"strings"
 )
 
+// errsPkg returns the name to reference the go-errs package with in generated code.
+func (fun *funcInfo) errsPkg() string {
+	if fun.errsName == "" {
+		return "errs"
+	}
+	return fun.errsName
+}
+
 // formatParamWithKeepSecret formats a parameter name, wrapping it with
-// errs.KeepSecret() if it's in the keepSecretNames set.
-func formatParamWithKeepSecret(paramName string, keepSecretNames map[string]bool) string {
-	if keepSecretNames != nil && keepSecretNames[paramName] {
-		return fmt.Sprintf("errs.KeepSecret(%s)", paramName)
+// errs.KeepSecret() if it's in the keepSecretNames set of fun.
+func (fun *funcInfo) formatParamWithKeepSecret(paramName string) string {
+	if fun.keepSecretNames != nil && fun.keepSecretNames[paramName] {
+		return fmt.Sprintf("%s.KeepSecret(%s)", fun.errsPkg(), paramName)
 	}
 	return paramName
 }
 
-// formatParams formats all parameter names, applying KeepSecret wrapping where needed.
-func formatParams(paramNames []string, keepSecretNames map[string]bool) string {
-	formatted := make([]string, len(paramNames))
-	for i, name := range paramNames {
-		formatted[i] = formatParamWithKeepSecret(name, keepSecretNames)
+// formatParams formats all parameter names of fun, applying KeepSecret wrapping where needed.
+func (fun *funcInfo) formatParams() string {
+	formatted := make([]string, len(fun.paramNames))
+	for i, name := range fun.paramNames {
+		formatted[i] = fun.formatParamWithKeepSecret(name)
 	}
 	return strings.Join(formatted, ", ")
 }
@@ -31,37 +39,43 @@ func formatParams(paramNames []string, keepSecretNames map[string]bool) string {
 //
 // If keepSecretNames contains any parameter names, those parameters will be
 // wrapped with errs.KeepSecret() to prevent secrets from appearing in logs.
+// The go-errs package is referenced by fun.errsPkg().
 func generateWrapStatement(fun *funcInfo) string {
 	switch numParams := len(fun.paramNames); {
 	case numParams == 0:
-		return fmt.Sprintf("defer errs.WrapWith0FuncParams(&%s)",
+		return fmt.Sprintf("defer %s.WrapWith0FuncParams(&%s)",
+			fun.errsPkg(),
 			fun.errorResultName,
 		)
 	case numParams == 1:
-		return fmt.Sprintf("defer errs.WrapWith1FuncParam(&%s, %s)",
+		return fmt.Sprintf("defer %s.WrapWith1FuncParam(&%s, %s)",
+			fun.errsPkg(),
 			fun.errorResultName,
-			formatParamWithKeepSecret(fun.paramNames[0], fun.keepSecretNames),
+			fun.formatParamWithKeepSecret(fun.paramNames[0]),
 		)
 	case numParams > 10:
 		// 11+ parameters: use variadic version
 		return generateVariadicWrapStatement(fun)
 	default:
-		return fmt.Sprintf("defer errs.WrapWith%dFuncParams(&%s, %s)",
+		return fmt.Sprintf("defer %s.WrapWith%dFuncParams(&%s, %s)",
+			fun.errsPkg(),
 			numParams,
 			fun.errorResultName,
-			formatParams(fun.paramNames, fun.keepSecretNames),
+			fun.formatParams(),
 		)
 	}
 }
 
 func generateVariadicWrapStatement(fun *funcInfo) string {
 	if len(fun.paramNames) == 0 {
-		return fmt.Sprintf("defer errs.WrapWithFuncParams(&%s)",
+		return fmt.Sprintf("defer %s.WrapWithFuncParams(&%s)",
+			fun.errsPkg(),
 			fun.errorResultName,
 		)
 	}
-	return fmt.Sprintf("defer errs.WrapWithFuncParams(&%s, %s)",
+	return fmt.Sprintf("defer %s.WrapWithFuncParams(&%s, %s)",
+		fun.errsPkg(),
 		fun.errorResultName,
-		formatParams(fun.paramNames, fun.keepSecretNames),
+		fun.formatParams(),
 	)
 }
