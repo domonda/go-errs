@@ -376,12 +376,6 @@ if dbErr, ok := errors.AsType[*DatabaseError](err); ok {
 This package provides additional generic helpers:
 
 ```go
-// Check if error chain contains a specific type (bool only, no value needed)
-// Equivalent to: _, ok := errors.AsType[*DatabaseError](err)
-if errs.Has[*DatabaseError](err) {
-    // Handle database error
-}
-
 // Get ALL errors of a specific type from the full wrapping tree.
 // Unlike errors.AsType which returns only the first match,
 // errs.As traverses the entire tree including multi-errors (errors.Join):
@@ -403,6 +397,10 @@ if errs.Type[*DatabaseError](err) {
     // Error is or wraps a DatabaseError
 }
 ```
+
+`errs.Has[T](err)` is kept only for compatibility reasons,
+it is equivalent to `_, ok := errors.AsType[T](err)`.
+Consider using `errors.AsType` from the standard library instead.
 
 ### Navigating Error Chains
 
@@ -673,7 +671,7 @@ This is preferable to omitting sensitive parameters entirely, as omitted paramet
 
 ## Compatibility
 
-- **Go version:** Requires Go 1.24+, the `go-errs-wrap` tool requires Go 1.26+
+- **Go version:** Requires Go 1.26+
 - **Error handling:** Fully compatible with `errors.Is`, `errors.As`, `errors.Unwrap`, and `errors.Join`
 - **Testing:** Use with `testify` or any testing framework
 - **Sentry:** Errors wrapped with a call stack are recognized by `sentry-go` (see below)

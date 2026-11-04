@@ -22,6 +22,7 @@ For tunable package variables (`MaxCallStackFrames`, `Printer`,
 - [Wrapping with a call stack](#wrapping-with-a-call-stack)
 - [Wrapping with function parameters](#wrapping-with-function-parameters)
 - [Not-found errors](#not-found-errors)
+- [Replacing errors](#replacing-errors)
 - [Context errors](#context-errors)
 - [Panic recovery](#panic-recovery)
 - [Logging control](#logging-control)
@@ -192,6 +193,52 @@ Reports whether `err` is non-nil and is **not** any of those three. Useful for
 
 Returns `replacement` if `IsErrNotFound(err)` is true, otherwise returns `err`
 unchanged. Lets you swap any not-found variant for a domain-specific error.
+
+---
+
+## Replacing errors
+
+`ReplaceIfIs` and `ReplaceIfIsNot` match a target error with `errors.Is`;
+`ReplaceIfType` and `ReplaceIfNotType` match an error type with
+`errors.AsType`. Wrapped and joined errors match too, and all four return a
+`nil` err as `nil`. Each turns an `if` with two returns into a single `return`.
+
+### `func ReplaceIfIs(err, target, replacement error) error`
+
+Returns `replacement` if `errors.Is(err, target)` is true, otherwise `err`
+unchanged. The generic form of
+[`ReplaceErrNotFound`](#func-replaceerrnotfounderr-replacement-error-error):
+
+```go
+return errs.ReplaceIfIs(err, sql.ErrNoRows, ErrUserNotFound)
+```
+
+### `func ReplaceIfIsNot(err, target, replacement error) error`
+
+The reverse of `ReplaceIfIs`: returns `replacement` if `errors.Is(err, target)`
+is false, otherwise `err` unchanged:
+
+```go
+return errs.ReplaceIfIsNot(err, flag.ErrHelp, errUsage)
+```
+
+### `func ReplaceIfType[T error](err, replacement error) error`
+
+Returns `replacement` if `errors.AsType[T](err)` finds an error of type `T` in
+`err`'s tree, otherwise `err` unchanged:
+
+```go
+return errs.ReplaceIfType[*json.SyntaxError](err, ErrInvalidConfig)
+```
+
+### `func ReplaceIfNotType[T error](err, replacement error) error`
+
+The reverse of `ReplaceIfType`: returns `replacement` if `errors.AsType[T](err)`
+finds no error of type `T`, otherwise `err` unchanged:
+
+```go
+return errs.ReplaceIfNotType[*ValidationError](err, ErrInternal)
+```
 
 ---
 
@@ -372,15 +419,16 @@ sentinel are unequal, but their `UnwrapCallStack` results are equal).
 
 ### `func Has[T error](err error) bool`
 
-Reports whether `err`'s tree contains an error of type `T`. A shortcut for
-`errors.As` when you do not need the matched value.
+Reports whether `err`'s tree contains an error of type `T`, implemented as
+`_, ok := errors.AsType[T](err)`.
+
+Kept only for compatibility reasons. Consider using the standard library's
+`errors.AsType[T](err) (T, bool)` (since Go 1.26) instead, which also returns
+the matched value:
 
 ```go
-if errs.Has[*DatabaseError](err) { /* … */ }
+if _, ok := errors.AsType[*DatabaseError](err); ok { /* … */ }
 ```
-
-Since Go 1.26 the standard library offers `errors.AsType[T](err) (T, bool)`;
-use it when you need the value, `Has` when you only need the boolean.
 
 ### `func As[T error](err error) []T`
 

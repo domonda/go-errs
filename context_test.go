@@ -2,6 +2,8 @@ package errs
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"testing"
 	"time"
 )
@@ -88,4 +90,26 @@ func TestIsContextDeadlineExceeded(t *testing.T) {
 	exceededDeadlineCtxCancel() // to avoid lint warnings
 	futureDeadlineCtxCancel()   // to avoid lint warnings
 	cancelLater()               // to avoid lint warnings
+}
+
+func TestIsContextError(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{name: "nil", err: nil, want: false},
+		{name: "Canceled", err: context.Canceled, want: true},
+		{name: "DeadlineExceeded", err: context.DeadlineExceeded, want: true},
+		{name: "wrapped Canceled", err: fmt.Errorf("wrapped: %w", context.Canceled), want: true},
+		{name: "wrapped DeadlineExceeded", err: Errorf("wrapped: %w", context.DeadlineExceeded), want: true},
+		{name: "other", err: errors.New("other"), want: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := IsContextError(tt.err); got != tt.want {
+				t.Errorf("IsContextError() = %v, want %v", got, tt.want)
+			}
+		})
+	}
 }

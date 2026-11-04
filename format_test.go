@@ -785,6 +785,12 @@ func TestCallStackFilePath(t *testing.T) {
 		File:     "github.com/domonda/go-errs/wrapwithfuncparams_test.go",
 	}), "relative path used as-is")
 
+	// An absolute path is used as-is if the function name carries no package path.
+	assert.Equal(t, "/abs/path/file.go", callStackFilePath(runtime.Frame{
+		Function: "noPackagePathHere",
+		File:     "/abs/path/file.go",
+	}), "absolute path without package path")
+
 	// An explicit override trims the raw path (legacy behavior).
 	TrimFilePathPrefix = "/Users/somebody/go/src/"
 	assert.Equal(t, want, callStackFilePath(runtime.Frame{
@@ -827,4 +833,10 @@ func TestLogFunctionCall(t *testing.T) {
 
 		assert.Equal(t, []string{"withPercent(`100%d`)"}, log.messages)
 	})
+}
+
+func TestFormatError_WithoutWrappedError(t *testing.T) {
+	// A call stack wrapper of a nil error has no error message to show
+	err := &withCallStack{callStack: callStack(0)}
+	assert.True(t, strings.HasPrefix(err.Error(), "no wrapped error found\n"), err.Error())
 }

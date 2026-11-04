@@ -39,18 +39,15 @@ func Root(err error) error {
 }
 
 // Has reports whether err's tree contains an error of type T.
-// It is a shortcut for errors.As when the target value is not needed.
 //
-// Since Go 1.26, the standard library provides [errors.AsType]
-// which returns the matched error value along with a bool:
+// Has is kept only for compatibility reasons,
+// consider using [errors.AsType] from the standard library
+// (since Go 1.26) instead, which also returns the matched error value:
 //
 //	target, ok := errors.AsType[*MyError](err)
-//
-// Use Has when you only need the boolean check and don't need
-// the matched error value. Use errors.AsType when you need both.
 func Has[T error](err error) bool {
-	var target T
-	return errors.As(err, &target)
+	_, ok := errors.AsType[T](err)
+	return ok
 }
 
 // As returns all errors of type T in the wrapping tree of err.

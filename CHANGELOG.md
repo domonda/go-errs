@@ -5,6 +5,30 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - 2026-11-04
+
+### Added
+
+- Four helpers turn an `if` with two returns into a single `return`,
+  for example `return errs.ReplaceIfIsNot(err, flag.ErrHelp, errUsage)`.
+  None of them replaces a `nil` err:
+  - `ReplaceIfIs(err, target, replacement)` returns `replacement` if
+    `errors.Is(err, target)`, otherwise `err`.
+  - `ReplaceIfIsNot(err, target, replacement)`, the reverse, returns
+    `replacement` if not `errors.Is(err, target)`, otherwise `err`.
+  - `ReplaceIfType[T](err, replacement)` returns `replacement` if
+    `errors.AsType[T](err)` finds an error of type `T`, otherwise `err`.
+  - `ReplaceIfNotType[T](err, replacement)`, the reverse, returns
+    `replacement` if `errors.AsType[T](err)` finds no error of type `T`,
+    otherwise `err`.
+
+### Changed
+
+- The `go-errs` module requires Go 1.26 instead of Go 1.24,
+  the same as `go-errs-wrap`, because it uses `errors.AsType`.
+- `Has[T]` is implemented with `errors.AsType` and kept only for
+  compatibility; use `errors.AsType` from the standard library instead.
+
 ## [1.1.0] - 2026-10-20
 
 ### Changed
