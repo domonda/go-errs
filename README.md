@@ -376,12 +376,6 @@ if dbErr, ok := errors.AsType[*DatabaseError](err); ok {
 This package provides additional generic helpers:
 
 ```go
-// Check if error chain contains a specific type (bool only, no value needed)
-// Equivalent to: _, ok := errors.AsType[*DatabaseError](err)
-if errs.Has[*DatabaseError](err) {
-    // Handle database error
-}
-
 // Get ALL errors of a specific type from the full wrapping tree.
 // Unlike errors.AsType which returns only the first match,
 // errs.As traverses the entire tree including multi-errors (errors.Join):
@@ -403,6 +397,10 @@ if errs.Type[*DatabaseError](err) {
     // Error is or wraps a DatabaseError
 }
 ```
+
+`errs.Has[T](err)` is kept only for compatibility reasons,
+it is equivalent to `_, ok := errors.AsType[T](err)`.
+Consider using `errors.AsType` from the standard library instead.
 
 ### Navigating Error Chains
 

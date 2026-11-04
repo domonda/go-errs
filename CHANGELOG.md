@@ -23,6 +23,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - The `go-errs` module requires Go 1.26 instead of Go 1.24,
   the same as `go-errs-wrap`, because it uses `errors.AsType`.
+- `Has[T]` is implemented with `errors.AsType` and kept only for
+  compatibility, use `errors.AsType` from the standard library instead.
 
 ## [1.1.0] - 2026-10-20
 

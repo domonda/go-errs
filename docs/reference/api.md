@@ -419,15 +419,16 @@ sentinel are unequal, but their `UnwrapCallStack` results are equal).
 
 ### `func Has[T error](err error) bool`
 
-Reports whether `err`'s tree contains an error of type `T`. A shortcut for
-`errors.As` when you do not need the matched value.
+Reports whether `err`'s tree contains an error of type `T`, implemented as
+`_, ok := errors.AsType[T](err)`.
+
+Kept only for compatibility reasons. Consider using the standard library's
+`errors.AsType[T](err) (T, bool)` (since Go 1.26) instead, which also returns
+the matched value:
 
 ```go
-if errs.Has[*DatabaseError](err) { /* … */ }
+if _, ok := errors.AsType[*DatabaseError](err); ok { /* … */ }
 ```
-
-Since Go 1.26 the standard library offers `errors.AsType[T](err) (T, bool)`;
-use it when you need the value, `Has` when you only need the boolean.
 
 ### `func As[T error](err error) []T`
 
