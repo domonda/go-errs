@@ -42,6 +42,7 @@ jobs:
           go-version: ${{ matrix.go == 'stable' && 'stable' || '' }}
           cache-dependency-path: ${{ matrix.module }}/go.sum
       - name: Check go.mod and go.sum are tidy
+        if: matrix.go == 'go.mod'
         run: go mod tidy -diff
       - name: Vet
         run: go vet ./...
