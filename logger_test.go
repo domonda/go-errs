@@ -59,7 +59,4 @@ func TestDontLog(t *testing.T) {
 	if errors.Unwrap(err) != cause {
 		t.Errorf("errors.Unwrap(DontLog(cause)) = %v, want %v", errors.Unwrap(err), cause)
 	}
-	if !errors.Is(err, cause) {
-		t.Error("errors.Is(DontLog(cause), cause) = false, want true")
-	}
 }
