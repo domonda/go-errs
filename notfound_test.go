@@ -5,6 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func ExampleErrNotFound() {
@@ -31,4 +34,25 @@ func ExampleErrNotFound() {
 	// IsErrNotFound(nil): false
 	// errors.Is(sql.ErrNoRows, ErrNotFound): false
 	// errors.Is(os.ErrNotExist, ErrNotFound): false
+}
+
+func TestIsOtherThanErrNotFound(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{name: "nil", err: nil, want: false},
+		{name: "ErrNotFound", err: ErrNotFound, want: false},
+		{name: "wrapped ErrNotFound", err: fmt.Errorf("user %w", ErrNotFound), want: false},
+		{name: "sql.ErrNoRows", err: sql.ErrNoRows, want: false},
+		{name: "os.ErrNotExist", err: os.ErrNotExist, want: false},
+		{name: "other", err: errors.New("other"), want: true},
+		{name: "wrapped other", err: fmt.Errorf("wrapped: %w", errors.New("other")), want: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, IsOtherThanErrNotFound(tt.err))
+		})
+	}
 }

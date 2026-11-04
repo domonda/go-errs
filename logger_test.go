@@ -45,3 +45,21 @@ type testLogger struct {
 func (l *testLogger) Printf(format string, args ...any) {
 	l.messages = append(l.messages, fmt.Sprintf(format, args...))
 }
+
+func TestDontLog(t *testing.T) {
+	if err := DontLog(nil); err != nil {
+		t.Errorf("DontLog(nil) = %v, want nil", err)
+	}
+
+	cause := errors.New("cause")
+	err := DontLog(cause)
+	if err.Error() != cause.Error() {
+		t.Errorf("DontLog(cause).Error() = %q, want %q", err.Error(), cause.Error())
+	}
+	if errors.Unwrap(err) != cause {
+		t.Errorf("errors.Unwrap(DontLog(cause)) = %v, want %v", errors.Unwrap(err), cause)
+	}
+	if !errors.Is(err, cause) {
+		t.Error("errors.Is(DontLog(cause), cause) = false, want true")
+	}
+}

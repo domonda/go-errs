@@ -34,6 +34,7 @@ func TestRoot(t *testing.T) {
 		{name: "2x std wrapped", err: fmt.Errorf("re-wrapped: %w", fmt.Errorf("wrapped: %w", sentinel)), want: sentinel},
 		{name: "2x mixed wrapped", err: fmt.Errorf("re-wrapped: %w", Errorf("wrapped: %w", sentinel)), want: sentinel},
 		{name: "custom wrapped", err: errWrapper{Wrapped: sentinel}, want: sentinel},
+		{name: "custom wrapper of nil", err: errWrapper{}, want: errWrapper{}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -93,6 +94,7 @@ func TestIsType(t *testing.T) {
 		{name: "2x wrapped(struct), struct", args: args{err: Errorf("wrapped: %w", errWrapper{Wrapped: errStruct{"a"}}), target: errStruct{"b"}}, want: true},
 		{name: "errWrapper(struct), errWrapper", args: args{err: Errorf("wrapped: %w", errWrapper{Wrapped: errStruct{"a"}}), target: errWrapper{}}, want: true},
 		{name: "Errorf, withCallStack", args: args{err: Errorf("wrapped: %w", errWrapper{Wrapped: errStruct{"a"}}), target: New("withCallStack")}, want: true},
+		{name: "errWrapper(nil), struct", args: args{err: errWrapper{}, target: errStruct{"a"}}, want: false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -341,6 +343,12 @@ func TestRoot_WithErrorsJoin(t *testing.T) {
 	t.Run("nil error", func(t *testing.T) {
 		result := Root(nil)
 		assert.Nil(t, result)
+	})
+
+	t.Run("multi-error with only nil errors is the root", func(t *testing.T) {
+		err := multiWrapper{errs: []error{nil, nil}}
+
+		assert.Equal(t, err, Root(err))
 	})
 }
 
@@ -1118,4 +1126,38 @@ func TestUnwrapCallStack(t *testing.T) {
 		result := UnwrapCallStack(wrapped3)
 		assert.Equal(t, sentinel, result, "should unwrap all types of callstack wrappers")
 	})
+}
+
+func TestAs_NilWrappedErrors(t *testing.T) {
+	t.Run("wrapper of nil", func(t *testing.T) {
+		assert.Empty(t, As[errStruct](errWrapper{}))
+	})
+
+	t.Run("multi-error skips nil errors", func(t *testing.T) {
+		err := multiWrapper{errs: []error{nil, errStruct{Err: "a"}, nil}}
+
+		assert.Equal(t, []errStruct{{Err: "a"}}, As[errStruct](err))
+	})
+}
+
+func TestType(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{name: "nil", err: nil, want: false},
+		{name: "struct", err: errStruct{Err: "a"}, want: true},
+		{name: "wrapped struct", err: fmt.Errorf("wrapped: %w", errStruct{Err: "a"}), want: true},
+		{name: "2x wrapped struct", err: Errorf("wrapped: %w", errWrapper{Wrapped: errStruct{Err: "a"}}), want: true},
+		{name: "other", err: errors.New("other"), want: false},
+		{name: "wrapper of nil", err: errWrapper{}, want: false},
+		// Type does not consult As methods, unlike errors.As
+		{name: "As method", err: customAsError{msg: "as", matchType: "errStruct"}, want: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, Type[errStruct](tt.err))
+		})
+	}
 }
