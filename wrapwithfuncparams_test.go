@@ -1,51 +1,13 @@
 package errs
 
 import (
-	"context"
 	"errors"
-	"fmt"
 	"runtime"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
-
-type strct struct {
-	A int
-}
-
-func funcA(ctx context.Context, i int, s string, strct *strct) (err error) {
-	defer WrapWith4FuncParams(&err, ctx, i, s, strct)
-
-	return funcB(s, "X\nX")
-}
-
-func funcB(s ...string) (err error) {
-	defer WrapWithFuncParams(&err, s)
-
-	return funcC()
-}
-
-func funcC() (err error) {
-	defer WrapWithFuncParams(&err)
-
-	return New("error in funcC")
-}
-
-func ExampleWrapWithFuncParams() {
-	err := funcA(context.Background(), 666, "Hello World!", &strct{A: -1})
-	fmt.Println(err)
-
-	// Output:
-	// error in funcC
-	// github.com/domonda/go-errs.funcC()
-	//     github.com/domonda/go-errs/wrapwithfuncparams_test.go:33
-	// github.com/domonda/go-errs.funcB([`Hello World!`,`X\nX`])
-	//     github.com/domonda/go-errs/wrapwithfuncparams_test.go:27
-	// github.com/domonda/go-errs.funcA(Context{}, 666, `Hello World!`, strct{A:-1})
-	//     github.com/domonda/go-errs/wrapwithfuncparams_test.go:21
-}
 
 func TestWrapWithNFuncParams(t *testing.T) {
 	tests := []struct {
