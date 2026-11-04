@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `ReplaceIfIs(err, target, replacement)` returns `replacement` if
+  `errors.Is(err, target)`, otherwise `err`.
+- `ReplaceIfIsNot(err, target, replacement)`, the reverse, returns `replacement`
+  if not `errors.Is(err, target)`, otherwise `err`.
+- `ReplaceIfType[T](err, replacement)` returns `replacement` if
+  `errors.AsType[T](err)` finds an error of type `T`, otherwise `err`.
+- `ReplaceIfNotType[T](err, replacement)`, the reverse, returns `replacement`
+  if `errors.AsType[T](err)` finds no error of type `T`, otherwise `err`.
+- All four return a `nil` err as `nil`.
+
 ### Changed
 
 - The `go-errs` module requires Go 1.26 instead of Go 1.24,
