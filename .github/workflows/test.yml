@@ -15,10 +15,16 @@ jobs:
     # of the go-errs-wrap module, so every module is tested on its own
     # and without go.work, like it is built by the modules using it
     strategy:
+      fail-fast: false
       matrix:
         module:
           - .
           - cmd/go-errs-wrap
+        # The minimum Go version of the module's go.mod
+        # and the latest stable Go release
+        go:
+          - go.mod
+          - stable
     env:
       GOWORK: "off"
     defaults:
@@ -32,8 +38,11 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v7
         with:
-          go-version-file: ${{ matrix.module }}/go.mod
+          go-version-file: ${{ matrix.go == 'go.mod' && format('{0}/go.mod', matrix.module) || '' }}
+          go-version: ${{ matrix.go == 'stable' && 'stable' || '' }}
           cache-dependency-path: ${{ matrix.module }}/go.sum
+      - name: Check go.mod and go.sum are tidy
+        run: go mod tidy -diff
       - name: Vet
         run: go vet ./...
       - name: Test
