@@ -417,6 +417,35 @@ clean := errs.UnwrapCallStack(err) // == fmt.Errorf("context: %w", sentinel)
 Handy for comparing errors without call-stack noise (two wraps of the same
 sentinel are unequal, but their `UnwrapCallStack` results are equal).
 
+### `func MessageWithoutCallStacks(err error) string`
+
+Returns the message of `err` with every call stack and function parameter
+block of this package removed, at every level of the error tree, or `""` for a
+nil `err`. Use it for messages handed to clients (HTTP responses, MCP tool
+results, validation messages), where call stacks would leak source paths, line
+numbers and function arguments.
+
+```go
+err := errs.Errorf("invalid from_date: %w", errs.New("month out of range"))
+msg := errs.MessageWithoutCallStacks(err) // "invalid from_date: month out of range"
+```
+
+`fmt.Errorf` and `errs.Errorf` render a `%w` operand's `Error()`, call stack
+included, into their own message when they are called, so the stack sits in
+the middle of the outer message. `MessageWithoutCallStacks` removes the
+outermost call-stack wrappers, then replaces each wrapped error's `Error()`
+text inside the message with that error's cleaned message, recursively. That
+covers `fmt.Errorf` with one or more `%w` and `errors.Join`.
+
+A wrapper whose `Error()` does not contain its wrapped error's `Error()`
+verbatim (one that reformats it) keeps the message it rendered. The same holds
+when a wrapped error's message changed after the wrapper rendered it, for
+example because a `WrapWithFuncParams` parameter is a pointer to a value that
+was modified later.
+
+Compared with `UnwrapCallStack` (outermost wrappers only) and `Root` (innermost
+error, drops the context), `MessageWithoutCallStacks` keeps the full message.
+
 ### `func Has[T error](err error) bool`
 
 Reports whether `err`'s tree contains an error of type `T`, implemented as

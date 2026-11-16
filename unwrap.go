@@ -4,6 +4,7 @@ import (
 	"errors"
 	"reflect"
 	"slices"
+	"strings"
 )
 
 // Root unwraps err recursively and returns the root error.
@@ -186,6 +187,139 @@ func UnwrapCallStack(err error) error {
 		err = p.Unwrap()
 	}
 	return err
+}
+
+// MessageWithoutCallStacks returns the message of err with every call stack
+// and function parameter block of this package removed, at every level
+// of the error tree. It returns "" for a nil err.
+//
+// The Error method of errors created by New, Errorf, WrapWithCallStack and
+// WrapWithFuncParams appends the call stack and function parameters to the
+// message. That is right for logs, but leaks source paths, line numbers and
+// function arguments when the message is handed to a client, for example
+// in an HTTP response, an MCP tool result or a validation message.
+// Use MessageWithoutCallStacks for messages that leave the service:
+//
+//	func ValidateQuery(query string) (err error) {
+//	    defer errs.WrapWithFuncParams(&err, query)
+//
+//	    if strings.Contains(query, "set_config") {
+//	        return errs.New("query contains disallowed identifier: set_config")
+//	    }
+//	    return nil
+//	}
+//
+//	if err := ValidateQuery(query); err != nil {
+//	    err = errs.Errorf("invalid query: %w", err)
+//	    log.Println(err) // message with both call stacks and the query parameter
+//	    http.Error(w, errs.MessageWithoutCallStacks(err), http.StatusBadRequest)
+//	    // "invalid query: query contains disallowed identifier: set_config"
+//	}
+//
+// Which function to use:
+//   - UnwrapCallStack removes only the outermost call-stack wrappers and
+//     returns an error whose message can still contain the call stacks of
+//     wrapped errors.
+//   - Root returns the innermost error and drops the context
+//     that wrapping errors added to the message.
+//   - MessageWithoutCallStacks keeps the full message including all context
+//     and removes only the call stacks.
+//
+// fmt.Errorf (and Errorf) render the Error result of a %w operand into their
+// message when they are called, so the call stack of a wrapped error ends up
+// in the middle of the wrapping error's message. MessageWithoutCallStacks
+// removes the outermost call-stack wrappers, then replaces the Error result
+// of each wrapped error (from Unwrap() error or Unwrap() []error) in the
+// message with the wrapped error's message without call stacks,
+// recursively. This handles fmt.Errorf with one or more %w verbs and
+// errors.Join.
+//
+// A wrapper whose Error method does not contain the Error result of
+// its wrapped error verbatim keeps the message it rendered,
+// including any call stack text it copied in a changed form.
+// The same applies when a wrapped error's message changed after the wrapper
+// rendered it, for example because a function parameter passed to
+// WrapWithFuncParams is a pointer to a value that was modified later.
+func MessageWithoutCallStacks(err error) string {
+	err = UnwrapCallStack(err)
+	if err == nil {
+		return ""
+	}
+	var wrapped []error
+	switch x := err.(type) {
+	case interface{ Unwrap() error }:
+		wrapped = []error{x.Unwrap()}
+	case interface{ Unwrap() []error }:
+		wrapped = x.Unwrap()
+	}
+	type wrappedMessage struct{ withStacks, withoutStacks string }
+	var messages []wrappedMessage
+	for _, w := range wrapped {
+		if w == nil {
+			continue
+		}
+		m := wrappedMessage{w.Error(), MessageWithoutCallStacks(w)}
+		if m.withStacks != m.withoutStacks {
+			messages = append(messages, m)
+		}
+	}
+	// Longer messages first, so that the message of a wrapped error which is
+	// also contained in the message of a sibling wrapped error
+	// is not replaced within the sibling's occurrence.
+	slices.SortStableFunc(messages, func(a, b wrappedMessage) int {
+		return len(b.withStacks) - len(a.withStacks)
+	})
+	// Occurrences are searched in the original message and may not overlap,
+	// so wrapped errors with identical messages each replace their own one.
+	msg := err.Error()
+	var replacements []messageReplacement
+	for _, m := range messages {
+		start := indexNotOverlapping(msg, m.withStacks, replacements)
+		if start >= 0 {
+			replacements = append(replacements, messageReplacement{start, start + len(m.withStacks), m.withoutStacks})
+		}
+	}
+	if len(replacements) == 0 {
+		return msg
+	}
+	slices.SortFunc(replacements, func(a, b messageReplacement) int { return a.start - b.start })
+	var b strings.Builder
+	pos := 0
+	for _, r := range replacements {
+		b.WriteString(msg[pos:r.start])
+		b.WriteString(r.text)
+		pos = r.end
+	}
+	b.WriteString(msg[pos:])
+	return b.String()
+}
+
+// messageReplacement replaces msg[start:end] with text.
+type messageReplacement struct {
+	start, end int
+	text       string
+}
+
+// indexNotOverlapping returns the index of the first occurrence of substr in s
+// that overlaps none of the replacements, or -1 if there is none.
+func indexNotOverlapping(s, substr string, replacements []messageReplacement) int {
+	from := 0
+search:
+	for from <= len(s)-len(substr) {
+		i := strings.Index(s[from:], substr)
+		if i < 0 {
+			return -1
+		}
+		start, end := from+i, from+i+len(substr)
+		for _, r := range replacements {
+			if start < r.end && r.start < end {
+				from = r.end
+				continue search
+			}
+		}
+		return start
+	}
+	return -1
 }
 
 // IsType returns if err or any unwrapped error

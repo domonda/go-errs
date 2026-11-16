@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 type errStruct struct{ Err string }
@@ -1160,4 +1161,212 @@ func TestType(t *testing.T) {
 			assert.Equal(t, tt.want, Type[errStruct](tt.err))
 		})
 	}
+}
+
+// validateReadOnlyQuery returns an error wrapped with its call stack
+// and the query as function parameter
+func validateReadOnlyQuery(query string) (err error) {
+	defer WrapWithFuncParams(&err, query)
+
+	if strings.Contains(query, "set_config") {
+		return New("query contains disallowed identifier: set_config")
+	}
+	return nil
+}
+
+func ExampleMessageWithoutCallStacks() {
+	err := validateReadOnlyQuery("SELECT set_config('role', 'admin', false)")
+	err = Errorf("invalid query: %w", err)
+
+	// err.Error() contains both call stacks and the query for the logs,
+	// the client gets only the message
+	fmt.Println(strings.Contains(err.Error(), "unwrap_test.go:"))
+	fmt.Println(MessageWithoutCallStacks(err))
+
+	// Output:
+	// true
+	// invalid query: query contains disallowed identifier: set_config
+}
+
+// upperError reformats the message of its wrapped error
+type upperError struct{ wrapped error }
+
+func (e upperError) Error() string { return strings.ToUpper(e.wrapped.Error()) }
+func (e upperError) Unwrap() error { return e.wrapped }
+
+// firstOfErrors is a multi-error that renders only its first error
+type firstOfErrors []error
+
+func (e firstOfErrors) Error() string   { return e[0].Error() }
+func (e firstOfErrors) Unwrap() []error { return e }
+
+// loginWithFuncParams returns an error wrapped with its call stack
+// and its function parameters, the password kept secret
+func loginWithFuncParams(user, password string) (err error) {
+	defer WrapWithFuncParams(&err, user, KeepSecret(password))
+
+	return New("login failed")
+}
+
+// sameLineErrors returns n errors created on the same line,
+// so their messages including the call stacks are identical
+func sameLineErrors(n int) []error {
+	errs := make([]error, n)
+	for i := range errs {
+		errs[i] = New("duplicate")
+	}
+	return errs
+}
+
+func TestMessageWithoutCallStacks(t *testing.T) {
+	inner := New("inner")
+	dups := sameLineErrors(2)
+	require.Equal(t, dups[0].Error(), dups[1].Error(), "errors created on the same line")
+
+	tests := []struct {
+		name string
+		err  error
+		want string
+	}{
+		{name: "nil", err: nil, want: ""},
+		{name: "plain error", err: errors.New("plain"), want: "plain"},
+		{name: "plain multi-line error", err: errors.New("line 1\nline 2"), want: "line 1\nline 2"},
+		{name: "Sentinel", err: Sentinel("sentinel"), want: "sentinel"},
+		{name: "New", err: New("failed"), want: "failed"},
+		{name: "Errorf without %w", err: Errorf("value %d is invalid", 5), want: "value 5 is invalid"},
+		{
+			name: "Errorf wrapping an errs error",
+			err:  Errorf("invalid from_date: %w", New("month out of range")),
+			want: "invalid from_date: month out of range",
+		},
+		{
+			name: "fmt.Errorf wrapping an errs error",
+			err:  fmt.Errorf("invalid from_date: %w", New("month out of range")),
+			want: "invalid from_date: month out of range",
+		},
+		{
+			name: "two %w in one Errorf",
+			err:  Errorf("first: %w, second: %w", New("a"), New("b")),
+			want: "first: a, second: b",
+		},
+		{
+			name: "two %w with reordered arguments",
+			err:  fmt.Errorf("%[2]w before %[1]w", New("a"), New("b")),
+			want: "b before a",
+		},
+		{
+			name: "three levels of Errorf",
+			err:  Errorf("handler: %w", fmt.Errorf("service: %w", Errorf("store: %w", New("timeout")))),
+			want: "handler: service: store: timeout",
+		},
+		{
+			name: "WrapWithCallStack of fmt.Errorf wrapping an errs error",
+			err:  WrapWithCallStack(fmt.Errorf("context: %w", New("cause"))),
+			want: "context: cause",
+		},
+		{
+			name: "WrapWithFuncParams with KeepSecret",
+			err:  loginWithFuncParams("alice", "hunter2"),
+			want: "login failed",
+		},
+		{
+			name: "Errorf wrapping WrapWithFuncParams",
+			err:  Errorf("authenticate: %w", loginWithFuncParams("alice", "hunter2")),
+			want: "authenticate: login failed",
+		},
+		{
+			name: "errors.Join of errs errors including a nested one",
+			err:  errors.Join(New("a"), Errorf("b: %w", New("c")), errors.New("d")),
+			want: "a\nb: c\nd",
+		},
+		{
+			name: "Errorf wrapping errors.Join",
+			err:  Errorf("validation: %w", errors.Join(New("name missing"), New("email missing"))),
+			want: "validation: name missing\nemail missing",
+		},
+		{name: "errors.Join of the same error twice", err: errors.Join(inner, inner), want: "inner\ninner"},
+		{
+			name: "errors.Join of identical errors",
+			err:  errors.Join(dups[0], dups[1]),
+			want: "duplicate\nduplicate",
+		},
+		{
+			name: "errors.Join of a plain and an errs error with the same text",
+			err:  errors.Join(Sentinel("same"), New("same")),
+			want: "same\nsame",
+		},
+		{
+			name: "errors.Join with a wrapper of the second error first",
+			err:  errors.Join(Errorf("context: %w", inner), inner),
+			want: "context: inner\ninner",
+		},
+		{
+			name: "two %w reordered, the first contained in the second",
+			err:  fmt.Errorf("%[2]w / %[1]w", inner, Errorf("context: %w", inner)),
+			want: "context: inner / inner",
+		},
+		{
+			name: "multi-error with a nil error rendering the same error once",
+			err:  firstOfErrors{inner, nil, inner},
+			want: "inner",
+		},
+		{name: "ErrNotFound", err: WrapWithCallStack(ErrNotFound), want: "not found"},
+		{
+			name: "Errorf wrapping ErrNotFound",
+			err:  Errorf("user %q: %w", "bob", ErrNotFound),
+			want: `user "bob": not found`,
+		},
+		{
+			name: "ReplaceErrNotFound with an errs error",
+			err:  ReplaceErrNotFound(Errorf("load: %w", ErrNotFound), New("no such user")),
+			want: "no such user",
+		},
+		{
+			name: "ReplaceIfIs keeping an errs error",
+			err:  ReplaceIfIs(Errorf("load: %w", New("timeout")), ErrNotFound, New("no such user")),
+			want: "load: timeout",
+		},
+		{name: "DontLog", err: DontLog(Errorf("quiet: %w", New("cause"))), want: "quiet: cause"},
+		{
+			name: "pass-through wrapper",
+			err:  errWrapper{Wrapped: Errorf("wrapped: %w", New("cause"))},
+			want: "wrapped: cause",
+		},
+		{
+			name: "reformatting wrapper of a plain error",
+			err:  upperError{wrapped: errors.New("plain")},
+			want: "PLAIN",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// given
+			err := tt.err
+
+			// when
+			msg := MessageWithoutCallStacks(err)
+
+			// then
+			assert.Equal(t, tt.want, msg)
+			assert.NotContains(t, msg, ".go:")
+			assert.NotContains(t, msg, "alice")
+			assert.NotContains(t, msg, "REDACTED")
+		})
+	}
+}
+
+// TestMessageWithoutCallStacks_ReformattingWrapper documents the limitation
+// that a wrapper which does not contain the message of its wrapped error
+// verbatim keeps the message it rendered, call stack included
+func TestMessageWithoutCallStacks_ReformattingWrapper(t *testing.T) {
+	// given
+	err := upperError{wrapped: New("failed")}
+
+	// when
+	msg := MessageWithoutCallStacks(err)
+
+	// then
+	assert.Equal(t, err.Error(), msg)
+	assert.Contains(t, msg, "FAILED\n")
+	assert.Contains(t, msg, ".GO:")
 }

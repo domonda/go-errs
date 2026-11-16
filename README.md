@@ -410,6 +410,27 @@ rootErr := errs.Root(err)
 
 // Unwrap call stack information only
 plainErr := errs.UnwrapCallStack(err)
+
+// Message for clients, without any call stack or function parameters
+msg := errs.MessageWithoutCallStacks(err)
+```
+
+Which one do I use?
+
+- `UnwrapCallStack` removes only the outermost call-stack wrappers. Errors
+  wrapped further down, for example by `errs.Errorf("context: %w", err)`,
+  keep their call stacks in the message.
+- `Root` returns the innermost error and drops the context that wrapping
+  errors added to the message.
+- `MessageWithoutCallStacks` returns the full message with all context and
+  removes every call stack and function parameter block at every level.
+  Use it for messages that leave the service: HTTP responses, MCP tool
+  results, validation messages.
+
+```go
+err := errs.Errorf("invalid from_date: %w", errs.New("month out of range"))
+http.Error(w, errs.MessageWithoutCallStacks(err), http.StatusBadRequest)
+// "invalid from_date: month out of range"
 ```
 
 ### Go 1.23+ Iterator Support
