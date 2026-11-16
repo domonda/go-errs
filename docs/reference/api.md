@@ -9,7 +9,9 @@ import "github.com/domonda/go-errs"
 
 Every function that captures a call stack records the program counters at the
 point it runs, so wrap at the site where the error is produced. Formatting is
-lazy: the call stack is only rendered into text when `Error()` is called.
+lazy: the call stack is only rendered into text when `Error()` is first called.
+The error caches that text, so later calls return the same message even if a
+function parameter or a formatting variable changed in between.
 
 For tunable package variables (`MaxCallStackFrames`, `Printer`,
 `FormatParamMaxLen`, `TrimFilePathPrefix`, `FormatFunctionCall`) see
@@ -277,7 +279,8 @@ returned as-is; `[]error` is joined via `errors.Join`; `string` and
 
 Like `AsError`, but non-nil results are wrapped with `debug.Stack()` after a
 newline. This is the goroutine stack at recovery time (broader than the
-call-stack wrappers), useful for panic diagnostics.
+call-stack wrappers), useful for panic diagnostics. `MessageWithoutCallStacks`
+removes the stack again, also from the errors of the `Recover*` functions.
 
 ### `func RecoverPanicAsError(result *error)`
 
@@ -416,6 +419,46 @@ clean := errs.UnwrapCallStack(err) // == fmt.Errorf("context: %w", sentinel)
 
 Handy for comparing errors without call-stack noise (two wraps of the same
 sentinel are unequal, but their `UnwrapCallStack` results are equal).
+
+### `func MessageWithoutCallStacks(err error) string`
+
+Returns the message of `err` with every call stack and function parameter
+block of this package removed, at every level of the error tree, or `""` for a
+nil `err`. Use it for messages handed to clients (HTTP responses, MCP tool
+results, validation messages), where call stacks would leak source paths, line
+numbers and function arguments.
+
+```go
+err := errs.Errorf("invalid from_date: %w", errs.New("month out of range"))
+msg := errs.MessageWithoutCallStacks(err) // "invalid from_date: month out of range"
+```
+
+`fmt.Errorf` and `errs.Errorf` render a `%w` operand's `Error()`, call stack
+included, into their own message when they are called, so the stack sits in
+the middle of the outer message. `MessageWithoutCallStacks` removes the
+outermost call-stack wrappers, then replaces every occurrence of the
+`Error()` text of each call-stack wrapper it reaches by unwrapping with that
+wrapper's cleaned message, recursively. That covers `fmt.Errorf` with one or
+more `%w` and `errors.Join`. The call-stack wrappers cache their first rendered
+message, so the text still matches when a parameter changed after wrapping,
+for example a `context.Context` that was canceled, or when the message of a
+wrapper between them and the outer error changed. Like `fmt`, it does not
+panic when an `Error()` method panics (a nil pointer, a nil field) and uses
+the text `fmt` renders for that error. The `debug.Stack()` text of recovered
+panics (`AsErrorWithDebugStack`, `RecoverPanicAsError`,
+`RecoverPanicAsErrorWithFuncParams`) is removed as well.
+
+Call stack text that is not reachable by unwrapping stays in the message:
+
+- an error formatted with `%v` or `%s` instead of `%w`, for example
+  `errs.Errorf("context: %v", err)`, so always wrap with `%w`;
+- a wrapper whose `Error()` does not contain its wrapped error's `Error()`
+  verbatim, for example one that reformats it, or a multi-error that lists
+  errors its `Unwrap()` does not return (like `hashicorp/go-multierror`,
+  whose `Unwrap()` returns a chain).
+
+Compared with `UnwrapCallStack` (outermost wrappers only) and `Root` (innermost
+error, drops the context), `MessageWithoutCallStacks` keeps the full message.
 
 ### `func Has[T error](err error) bool`
 

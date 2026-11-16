@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"runtime"
 	"slices"
+	"sync/atomic"
 )
 
 // New returns a new error with the passed text
@@ -99,10 +100,32 @@ var (
 type withCallStack struct {
 	err       error
 	callStack []uintptr
+
+	// message caches the first result of Error,
+	// see renderedMessage
+	message atomic.Pointer[string]
 }
 
 func (w *withCallStack) Error() string {
-	return formatError(w)
+	return w.renderedMessage(w)
+}
+
+// renderedMessage returns the message of the error self, which is w or the
+// error embedding w, rendered by formatError on the first call and cached.
+//
+// The message is cached so that it stays identical to the text that
+// fmt.Errorf with %w copied into a wrapping error's message, even when
+// a function parameter (for example a context.Context that got canceled),
+// TrimFilePathPrefix or Printer changed since. MessageWithoutCallStacks
+// finds the call stacks of wrapped errors by that text.
+func (w *withCallStack) renderedMessage(self error) string {
+	if m := w.message.Load(); m != nil {
+		return *m
+	}
+	m := formatError(self)
+	// Keep the message of another goroutine that rendered it first
+	w.message.CompareAndSwap(nil, &m)
+	return *w.message.Load()
 }
 
 func (w *withCallStack) Unwrap() error {

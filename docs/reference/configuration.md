@@ -3,7 +3,9 @@
 `errs` exposes a small set of package-level variables that control how call
 stacks and parameters are captured and rendered. Set them once at process start
 (for example in an `init` function or early in `main`) before errors are
-created; they are read whenever an error is formatted or captured.
+created; they are read whenever an error is formatted or captured. An error
+formats its message on its first `Error()` call and caches it, so changing a
+formatting variable after that call does not change that error's message.
 
 All variables live in the `errs` package:
 

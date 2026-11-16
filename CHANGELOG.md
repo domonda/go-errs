@@ -5,6 +5,36 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0] - 2026-11-16
+
+### Added
+
+- `MessageWithoutCallStacks(err)` returns the message of an error tree with
+  every call stack and function parameter block removed, at every level,
+  for messages handed to clients such as HTTP responses or MCP tool results.
+  `UnwrapCallStack` removes only the outermost call-stack wrappers, so
+  `errs.Errorf("context: %w", errs.New("cause"))` still had the inner call
+  stack in the middle of its message; `MessageWithoutCallStacks` returns
+  `"context: cause"`. It handles `fmt.Errorf` with one or more `%w`
+  and `errors.Join`, and removes the `debug.Stack()` text of recovered
+  panics. An error formatted with `%v` instead of `%w`, and a wrapper that
+  reformats its wrapped error's message, keep what they rendered.
+
+### Changed
+
+- The errors of `New`, `Errorf`, `WrapWithCallStack` and the
+  `WrapWith*FuncParams` functions cache the message of their first `Error()`
+  call. Later calls return the same text even if a function parameter,
+  `TrimFilePathPrefix` or `Printer` changed in between, which keeps it
+  identical to the text that `fmt.Errorf` with `%w` copied into a wrapping
+  error, so `MessageWithoutCallStacks` can find and remove it. Two otherwise
+  identical errors are no longer `reflect.DeepEqual` (testify's
+  `assert.Equal`) when only one of them has rendered its message.
+- `AsErrorWithDebugStack`, `RecoverPanicAsError` and
+  `RecoverPanicAsErrorWithFuncParams` return errors of unexported types
+  instead of `fmt.Errorf` results, with the same `Error()` text and
+  `Unwrap()` result.
+
 ## [1.2.0] - 2026-11-04
 
 ### Added
@@ -152,6 +182,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Initial stable release.
 
+[1.3.0]: https://github.com/domonda/go-errs/compare/v1.2.0...v1.3.0
+[1.2.0]: https://github.com/domonda/go-errs/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/domonda/go-errs/compare/v1.0.4...v1.1.0
 [1.0.4]: https://github.com/domonda/go-errs/compare/v1.0.3...v1.0.4
 [1.0.3]: https://github.com/domonda/go-errs/compare/v1.0.2...v1.0.3

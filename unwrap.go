@@ -2,8 +2,10 @@ package errs
 
 import (
 	"errors"
+	"fmt"
 	"reflect"
 	"slices"
+	"strings"
 )
 
 // Root unwraps err recursively and returns the root error.
@@ -186,6 +188,170 @@ func UnwrapCallStack(err error) error {
 		err = p.Unwrap()
 	}
 	return err
+}
+
+// MessageWithoutCallStacks returns the message of err with every call stack
+// and function parameter block of this package removed, at every level
+// of the error tree. It returns "" for a nil err and "<nil>" for a nil
+// pointer error, also when a call-stack wrapper of this package wraps it.
+// Like fmt, it does not panic when the Error method of an error panics,
+// and uses the text fmt renders for such an error instead.
+//
+// The Error method of errors created by New, Errorf, WrapWithCallStack and
+// WrapWithFuncParams appends the call stack and function parameters to the
+// message. That is right for logs, but leaks source paths, line numbers and
+// function arguments when the message is handed to a client, for example
+// in an HTTP response, an MCP tool result or a validation message.
+// Use MessageWithoutCallStacks for messages that leave the service:
+//
+//	func ValidateQuery(query string) (err error) {
+//	    defer errs.WrapWithFuncParams(&err, query)
+//
+//	    if strings.Contains(query, "set_config") {
+//	        return errs.New("query contains disallowed identifier: set_config")
+//	    }
+//	    return nil
+//	}
+//
+//	if err := ValidateQuery(query); err != nil {
+//	    err = errs.Errorf("invalid query: %w", err)
+//	    log.Println(err) // message with both call stacks and the query parameter
+//	    http.Error(w, errs.MessageWithoutCallStacks(err), http.StatusBadRequest)
+//	    // "invalid query: query contains disallowed identifier: set_config"
+//	}
+//
+// Which function to use:
+//   - UnwrapCallStack removes only the outermost call-stack wrappers and
+//     returns an error whose message can still contain the call stacks of
+//     wrapped errors.
+//   - Root returns the innermost error and drops the context
+//     that wrapping errors added to the message.
+//   - MessageWithoutCallStacks keeps the full message including all context
+//     and removes only the call stacks.
+//
+// fmt.Errorf (and Errorf) render the Error result of a %w operand into their
+// message when they are called, so the call stack of a wrapped error ends up
+// in the middle of the wrapping error's message. MessageWithoutCallStacks
+// removes the outermost call-stack wrappers, then replaces every occurrence
+// of the message of each call-stack wrapper found by unwrapping
+// (Unwrap() error or Unwrap() []error) in the message with that wrapper's
+// message without call stacks, recursively. This handles fmt.Errorf with
+// one or more %w verbs and errors.Join. The call-stack wrappers of this
+// package render their message once and return the same text afterwards,
+// so it matches what a wrapping error copied, even if a function parameter
+// such as a context.Context, or the message of an error between the wrapper
+// and err, changed since. The debug stack of a recovered panic
+// (AsErrorWithDebugStack, RecoverPanicAsError,
+// RecoverPanicAsErrorWithFuncParams) is removed as well.
+//
+// Call stack text that is not reachable by unwrapping stays in the message:
+//   - an error formatted with %v or %s instead of %w,
+//     for example Errorf("context: %v", err), so wrap errors with %w;
+//   - a wrapper whose Error method does not contain the Error result
+//     of its wrapped error verbatim, for example one that reformats it
+//     or lists errors it does not return from Unwrap.
+func MessageWithoutCallStacks(err error) string {
+	for {
+		if isNilPointer(err) {
+			// The Error and Unwrap methods of a nil pointer usually panic
+			return fmt.Sprint(err)
+		}
+		p, ok := err.(callStackProvider)
+		if !ok {
+			break
+		}
+		err = p.Unwrap()
+	}
+	if err == nil {
+		return ""
+	}
+	if p, ok := err.(messageWithoutCallStacksProvider); ok {
+		return p.messageWithoutCallStacks()
+	}
+	msg, ok := errorMessage(err)
+	if !ok {
+		return fmt.Sprint(err)
+	}
+	replacements := appendCallStackMessages(nil, err)
+	if len(replacements) == 0 {
+		return msg
+	}
+	// strings.Replacer replaces all occurrences from left to right
+	// without overlapping and tries the old strings in argument order at
+	// every position. Longer old strings first, so that the message of a
+	// call-stack wrapper which is also contained in the message of another
+	// one is not replaced within the other one's occurrence.
+	slices.SortStableFunc(replacements, func(a, b [2]string) int {
+		return len(b[0]) - len(a[0])
+	})
+	oldNew := make([]string, 0, 2*len(replacements))
+	for _, r := range replacements {
+		oldNew = append(oldNew, r[0], r[1])
+	}
+	return strings.NewReplacer(oldNew...).Replace(msg)
+}
+
+// messageWithoutCallStacksProvider is implemented by error types
+// of this package that render call stack text into their message
+// without a call-stack wrapper that MessageWithoutCallStacks could unwrap.
+type messageWithoutCallStacksProvider interface {
+	messageWithoutCallStacks() string
+}
+
+// appendCallStackMessages appends the message with and without call stacks
+// of the errors that render call stack text into their message, the
+// call-stack wrappers and the messageWithoutCallStacksProvider errors,
+// found by unwrapping err. It does not unwrap those errors any further,
+// MessageWithoutCallStacks of them removes the call stacks they wrap.
+// Their messages do not change after the first Error call,
+// so they match the text that wrapping errors copied.
+func appendCallStackMessages(replacements [][2]string, err error) [][2]string {
+	var wrapped []error
+	switch x := err.(type) {
+	case interface{ Unwrap() error }:
+		wrapped = []error{x.Unwrap()}
+	case interface{ Unwrap() []error }:
+		wrapped = x.Unwrap()
+	}
+	for _, w := range wrapped {
+		if w == nil || isNilPointer(w) {
+			// fmt renders a nil pointer error as "<nil>"
+			continue
+		}
+		_, isCallStack := w.(callStackProvider)
+		_, hasHook := w.(messageWithoutCallStacksProvider)
+		if !isCallStack && !hasHook {
+			replacements = appendCallStackMessages(replacements, w)
+			continue
+		}
+		withStacks, ok := errorMessage(w)
+		if !ok {
+			// fmt rendered "%!v(PANIC=Error method: ...)" with the panic value
+			// instead of the wrapper's message, so there is nothing to replace
+			continue
+		}
+		replacements = append(replacements, [2]string{withStacks, MessageWithoutCallStacks(w)})
+	}
+	return replacements
+}
+
+// errorMessage returns the result of err.Error()
+// or false if the Error method panicked.
+// fmt recovers such a panic and renders it into its result.
+func errorMessage(err error) (msg string, ok bool) {
+	defer func() {
+		if recover() != nil {
+			ok = false
+		}
+	}()
+	return err.Error(), true
+}
+
+// isNilPointer reports whether err is a non-nil interface
+// holding a nil pointer, whose Error method usually panics.
+func isNilPointer(err error) bool {
+	v := reflect.ValueOf(err)
+	return v.Kind() == reflect.Pointer && v.IsNil()
 }
 
 // IsType returns if err or any unwrapped error

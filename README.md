@@ -410,6 +410,31 @@ rootErr := errs.Root(err)
 
 // Unwrap call stack information only
 plainErr := errs.UnwrapCallStack(err)
+
+// Message for clients, without any call stack or function parameters
+msg := errs.MessageWithoutCallStacks(err)
+```
+
+Which one do I use?
+
+- `UnwrapCallStack` removes only the outermost call-stack wrappers. Errors
+  wrapped further down, for example by `errs.Errorf("context: %w", err)`,
+  keep their call stacks in the message.
+- `Root` returns the innermost error and drops the context that wrapping
+  errors added to the message.
+- `MessageWithoutCallStacks` returns the full message with all context and
+  removes the call stacks, function parameters and panic debug stacks
+  of every error it reaches by unwrapping, at every level.
+  Use it for messages that leave the service: HTTP responses, MCP tool
+  results, validation messages. Wrap errors with `%w`: an error formatted
+  with `%v` or `%s` is plain text in the outer message and keeps its call
+  stack, as does the text of a wrapper that reformats its wrapped error's
+  message (see [api.md](docs/reference/api.md#func-messagewithoutcallstackserr-error-string)).
+
+```go
+err := errs.Errorf("invalid from_date: %w", errs.New("month out of range"))
+http.Error(w, errs.MessageWithoutCallStacks(err), http.StatusBadRequest)
+// "invalid from_date: month out of range"
 ```
 
 ### Go 1.23+ Iterator Support
@@ -695,7 +720,7 @@ hub.CaptureException(err) // err's call stack shows up in the Sentry event
 
 - Zero-allocation error wrapping for functions with 0-10 parameters (using specialized functions)
 - Efficient call stack capture using `runtime.Callers`
-- Lazy error message formatting - only formats when `Error()` is called
+- Lazy error message formatting - only formats on the first `Error()` call, which caches the message
 - Configurable stack depth to balance detail vs memory usage
 
 ## Examples

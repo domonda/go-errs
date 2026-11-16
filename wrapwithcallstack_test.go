@@ -3,6 +3,7 @@ package errs
 import (
 	"reflect"
 	"runtime"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -140,4 +141,41 @@ func TestStackTrace_MatchesCallStack(t *testing.T) {
 	funcParams := makeFuncParamsError().(*withCallStackFuncParams)
 	assert.Equal(t, funcParams.CallStack(), funcParams.StackTrace(),
 		"promoted StackTrace must return the same program counters as CallStack")
+}
+
+// TestWithCallStack_ErrorRenderedOnce checks that Error returns the message
+// rendered by the first call, even after a function parameter changed,
+// so it matches the text a wrapping fmt.Errorf with %w copied
+func TestWithCallStack_ErrorRenderedOnce(t *testing.T) {
+	// given
+	c := &counter{N: 1}
+	err := newWithFuncParams("overflow", c)
+	first := err.Error()
+	require.Contains(t, first, "counter{N:1}")
+
+	// when
+	c.N = 2
+
+	// then
+	assert.Equal(t, first, err.Error())
+}
+
+// TestWithCallStack_ErrorConcurrent renders the message of the same error
+// from several goroutines at once, run it with -race
+func TestWithCallStack_ErrorConcurrent(t *testing.T) {
+	// given
+	err := Errorf("context: %w", New("cause"))
+	var wg sync.WaitGroup
+	messages := make([]string, 8)
+
+	// when
+	for i := range messages {
+		wg.Go(func() { messages[i] = err.Error() })
+	}
+	wg.Wait()
+
+	// then
+	for _, msg := range messages {
+		assert.Equal(t, messages[0], msg)
+	}
 }
