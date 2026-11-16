@@ -192,9 +192,10 @@ func UnwrapCallStack(err error) error {
 
 // MessageWithoutCallStacks returns the message of err with every call stack
 // and function parameter block of this package removed, at every level
-// of the error tree. It returns "" for a nil err. Like fmt, it does not
-// panic when the Error method of an error panics, for example the one of
-// a nil pointer, and returns what fmt renders for such an error then.
+// of the error tree. It returns "" for a nil err and "<nil>" for a nil
+// pointer error, also when a call-stack wrapper of this package wraps it.
+// Like fmt, it does not panic when the Error method of an error panics,
+// and uses the text fmt renders for such an error instead.
 //
 // The Error method of errors created by New, Errorf, WrapWithCallStack and
 // WrapWithFuncParams appends the call stack and function parameters to the
@@ -325,7 +326,8 @@ func appendCallStackMessages(replacements [][2]string, err error) [][2]string {
 		}
 		withStacks, ok := errorMessage(w)
 		if !ok {
-			// fmt renders "%!v(PANIC=Error method: ...)" without call stack
+			// fmt rendered "%!v(PANIC=Error method: ...)" with the panic value
+			// instead of the wrapper's message, so there is nothing to replace
 			continue
 		}
 		replacements = append(replacements, [2]string{withStacks, MessageWithoutCallStacks(w)})
