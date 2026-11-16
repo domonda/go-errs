@@ -27,7 +27,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   call. Later calls return the same text even if a function parameter,
   `TrimFilePathPrefix` or `Printer` changed in between, which keeps it
   identical to the text that `fmt.Errorf` with `%w` copied into a wrapping
-  error, so `MessageWithoutCallStacks` can find and remove it.
+  error, so `MessageWithoutCallStacks` can find and remove it. Two otherwise
+  identical errors are no longer `reflect.DeepEqual` (testify's
+  `assert.Equal`) when only one of them has rendered its message.
 - `AsErrorWithDebugStack`, `RecoverPanicAsError` and
   `RecoverPanicAsErrorWithFuncParams` return errors of unexported types
   instead of `fmt.Errorf` results, with the same `Error()` text and

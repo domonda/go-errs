@@ -436,12 +436,15 @@ msg := errs.MessageWithoutCallStacks(err) // "invalid from_date: month out of ra
 `fmt.Errorf` and `errs.Errorf` render a `%w` operand's `Error()`, call stack
 included, into their own message when they are called, so the stack sits in
 the middle of the outer message. `MessageWithoutCallStacks` removes the
-outermost call-stack wrappers, then replaces every occurrence of each wrapped
-error's `Error()` text inside the message with that error's cleaned message,
-recursively. That covers `fmt.Errorf` with one or more `%w` and `errors.Join`.
-The call-stack wrappers cache their first rendered message, so the text still
-matches when a parameter changed after wrapping, for example a
-`context.Context` that was canceled. The `debug.Stack()` text of recovered
+outermost call-stack wrappers, then replaces every occurrence of the
+`Error()` text of each call-stack wrapper it reaches by unwrapping with that
+wrapper's cleaned message, recursively. That covers `fmt.Errorf` with one or
+more `%w` and `errors.Join`. The call-stack wrappers cache their first rendered
+message, so the text still matches when a parameter changed after wrapping,
+for example a `context.Context` that was canceled, or when the message of a
+wrapper between them and the outer error changed. Like `fmt`, it does not
+panic when an `Error()` method panics (a nil pointer, a nil field) and uses
+the text `fmt` renders for that error. The `debug.Stack()` text of recovered
 panics (`AsErrorWithDebugStack`, `RecoverPanicAsError`,
 `RecoverPanicAsErrorWithFuncParams`) is removed as well.
 
@@ -450,7 +453,9 @@ Call stack text that is not reachable by unwrapping stays in the message:
 - an error formatted with `%v` or `%s` instead of `%w`, for example
   `errs.Errorf("context: %v", err)`, so always wrap with `%w`;
 - a wrapper whose `Error()` does not contain its wrapped error's `Error()`
-  verbatim, for example one that reformats it.
+  verbatim, for example one that reformats it, or a multi-error that lists
+  errors its `Unwrap()` does not return (like `hashicorp/go-multierror`,
+  whose `Unwrap()` returns a chain).
 
 Compared with `UnwrapCallStack` (outermost wrappers only) and `Root` (innermost
 error, drops the context), `MessageWithoutCallStacks` keeps the full message.

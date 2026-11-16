@@ -140,7 +140,9 @@ values.
   `MessageWithoutCallStacks` relies on that to find and remove the call stack
   inside the outer message. The flip side: changing `TrimFilePathPrefix`,
   `Printer` or a parameter after the first `Error()` call does not change
-  that error's message.
+  that error's message, and two otherwise identical errors are no longer
+  `reflect.DeepEqual` (testify's `assert.Equal`) when only one of them
+  has rendered its message.
 
 ## Related
 

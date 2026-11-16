@@ -1221,6 +1221,52 @@ func panicAfterWrappedNilPointerResult(x int) (err error) {
 	panic("boom")
 }
 
+// fieldError is an error whose Error method panics
+// if its field err is nil
+type fieldError struct{ err error }
+
+func (e *fieldError) Error() string { return "field: " + e.err.Error() }
+
+// panicAfterPanickingResult panics after setting its result
+// to an error whose Error method panics
+func panicAfterPanickingResult() (err error) {
+	defer RecoverPanicAsError(&err)
+
+	err = &fieldError{}
+	panic("boom")
+}
+
+// attemptsError wraps an error with a message prefix
+// that changes when attempts is changed
+type attemptsError struct {
+	attempts int
+	err      error
+}
+
+func (e *attemptsError) Error() string {
+	return fmt.Sprintf("after %d attempts: %s", e.attempts, e.err)
+}
+
+func (e *attemptsError) Unwrap() error { return e.err }
+
+// errorWithChangedWrapper returns an error whose message contains
+// the message of a wrapper that changed after it was wrapped
+func errorWithChangedWrapper() error {
+	wrapper := &attemptsError{attempts: 1, err: loginWithFuncParams("alice", "hunter2")}
+	err := fmt.Errorf("request failed: %w", wrapper)
+	wrapper.attempts = 2
+	return err
+}
+
+// errorWithChangedJoinSibling returns an error whose message contains
+// the message of errors.Join with a sibling that changed after wrapping
+func errorWithChangedJoinSibling() error {
+	sibling := &attemptsError{attempts: 1, err: Sentinel("timeout")}
+	err := fmt.Errorf("batch: %w", errors.Join(loginWithFuncParams("alice", "hunter2"), sibling))
+	sibling.attempts = 2
+	return err
+}
+
 // firstOfErrors is a multi-error that renders only its first error
 type firstOfErrors []error
 
@@ -1462,6 +1508,40 @@ func TestMessageWithoutCallStacks(t *testing.T) {
 			name: "fmt.Errorf wrapping a call-stack wrapper of a nil pointer error",
 			err:  fmt.Errorf("x: %w", WrapWithCallStack((*ptrError)(nil))),
 			want: "x: %!v(PANIC=Error method: runtime error: invalid memory address or nil pointer dereference)",
+		},
+		{
+			// fmt recovers the panic of an Error method
+			// and renders it into the message
+			name: "error whose Error method panics",
+			err:  &fieldError{},
+			want: "%!v(PANIC=Error method: runtime error: invalid memory address or nil pointer dereference)",
+		},
+		{
+			name: "fmt.Errorf wrapping an error whose Error method panics",
+			err:  fmt.Errorf("ctx: %w", &fieldError{}),
+			want: "ctx: %!v(PANIC=Error method: runtime error: invalid memory address or nil pointer dereference)",
+		},
+		{
+			name: "fmt.Errorf wrapping a call-stack wrapper of an error whose Error method panics",
+			err:  fmt.Errorf("ctx: %w", WrapWithCallStack(&fieldError{})),
+			want: "ctx: %!v(PANIC=Error method: runtime error: invalid memory address or nil pointer dereference)",
+		},
+		{
+			name: "RecoverPanicAsError after a result whose Error method panics",
+			err:  panicAfterPanickingResult(),
+			want: "function returning error (%!v(PANIC=Error method: runtime error: invalid memory address or nil pointer dereference)) panicked with: boom",
+		},
+		{
+			// the wrapper renders "after 2 attempts" now, but the call-stack
+			// wrapper it wraps still renders the text the message contains
+			name: "wrapper whose message changed after wrapping",
+			err:  errorWithChangedWrapper(),
+			want: "request failed: after 1 attempts: login failed",
+		},
+		{
+			name: "errors.Join with a sibling whose message changed after wrapping",
+			err:  errorWithChangedJoinSibling(),
+			want: "batch: login failed\nafter 1 attempts: timeout",
 		},
 		{name: "ErrNotFound", err: WrapWithCallStack(ErrNotFound), want: "not found"},
 		{
