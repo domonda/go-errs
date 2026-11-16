@@ -56,8 +56,10 @@ Use `errs.New` instead of `errors.New` to get a call stack for free.
 
 Wraps the result of `fmt.Errorf(format, a...)` with the current call stack.
 Supports the `%w` verb for wrapping: the returned error implements `Unwrap` and
-participates in `errors.Is`/`errors.As`. Passing more than one `%w`, or a `%w`
-operand that is not an `error`, is invalid (same rules as `fmt.Errorf`).
+participates in `errors.Is`/`errors.As`. A format may contain several `%w`
+verbs (Go 1.20 and later); `errors.Is`/`errors.As` then find each of their
+operands. A `%w` operand that is not an `error` is invalid (same rules as
+`fmt.Errorf`).
 
 ```go
 return errs.Errorf("failed to read config %s: %w", path, err)
@@ -285,8 +287,9 @@ removes the stack again, also from the errors of the `Recover*` functions.
 ### `func RecoverPanicAsError(result *error)`
 
 `defer` this to recover a panic and store it in `*result`. If `*result` is
-already non-nil, the panic wraps the existing error with a
-`function returning error (…) panicked with: …` message.
+already non-nil, the new error's message includes the existing error's text:
+`function returning error (…) panicked with: …`. Only the panic error is
+wrapped, so `errors.Is`/`errors.As` do not find the existing error.
 
 ```go
 func RiskyOperation() (err error) {
