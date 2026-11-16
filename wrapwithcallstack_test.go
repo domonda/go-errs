@@ -149,7 +149,7 @@ func TestStackTrace_MatchesCallStack(t *testing.T) {
 func TestWithCallStack_ErrorRenderedOnce(t *testing.T) {
 	// given
 	c := &counter{N: 1}
-	err := incrementWithFuncParams(c)
+	err := newWithFuncParams("overflow", c)
 	first := err.Error()
 	require.Contains(t, first, "counter{N:1}")
 

@@ -1201,15 +1201,6 @@ type ptrError struct{ msg string }
 
 func (e *ptrError) Error() string { return e.msg }
 
-// panicAfterNilPointerResult panics after setting its result
-// to a nil pointer error, the result is recovered by RecoverPanicAsError
-func panicAfterNilPointerResult() (err error) {
-	defer RecoverPanicAsError(&err)
-
-	err = (*ptrError)(nil)
-	panic("boom")
-}
-
 // panicAfterWrappedNilPointerResult panics after setting its result
 // to a nil pointer error that WrapWithFuncParams wraps before
 // RecoverPanicAsError recovers the panic
@@ -1227,15 +1218,6 @@ type fieldError struct{ err error }
 
 func (e *fieldError) Error() string { return "field: " + e.err.Error() }
 
-// panicAfterPanickingResult panics after setting its result
-// to an error whose Error method panics
-func panicAfterPanickingResult() (err error) {
-	defer RecoverPanicAsError(&err)
-
-	err = &fieldError{}
-	panic("boom")
-}
-
 // attemptsError wraps an error with a message prefix
 // that changes when attempts is changed
 type attemptsError struct {
@@ -1252,7 +1234,7 @@ func (e *attemptsError) Unwrap() error { return e.err }
 // errorWithChangedWrapper returns an error whose message contains
 // the message of a wrapper that changed after it was wrapped
 func errorWithChangedWrapper() error {
-	wrapper := &attemptsError{attempts: 1, err: loginWithFuncParams("alice", "hunter2")}
+	wrapper := &attemptsError{attempts: 1, err: newWithFuncParams("login failed", "alice", KeepSecret("hunter2"))}
 	err := fmt.Errorf("request failed: %w", wrapper)
 	wrapper.attempts = 2
 	return err
@@ -1262,7 +1244,7 @@ func errorWithChangedWrapper() error {
 // the message of errors.Join with a sibling that changed after wrapping
 func errorWithChangedJoinSibling() error {
 	sibling := &attemptsError{attempts: 1, err: Sentinel("timeout")}
-	err := fmt.Errorf("batch: %w", errors.Join(loginWithFuncParams("alice", "hunter2"), sibling))
+	err := fmt.Errorf("batch: %w", errors.Join(newWithFuncParams("login failed", "alice", KeepSecret("hunter2")), sibling))
 	sibling.attempts = 2
 	return err
 }
@@ -1273,12 +1255,12 @@ type firstOfErrors []error
 func (e firstOfErrors) Error() string   { return e[0].Error() }
 func (e firstOfErrors) Unwrap() []error { return e }
 
-// loginWithFuncParams returns an error wrapped with its call stack
-// and its function parameters, the password kept secret
-func loginWithFuncParams(user, password string) (err error) {
-	defer WrapWithFuncParams(&err, user, KeepSecret(password))
+// newWithFuncParams returns New(msg) wrapped with its call stack
+// and params as function parameters
+func newWithFuncParams(msg string, params ...any) (err error) {
+	defer WrapWithFuncParams(&err, params...)
 
-	return New("login failed")
+	return New(msg)
 }
 
 // sameLineErrors returns n errors created on the same line,
@@ -1291,24 +1273,8 @@ func sameLineErrors(n int) []error {
 	return errs
 }
 
-// queryWithContext returns an error wrapped with its call stack
-// and a context and a query as function parameters
-func queryWithContext(ctx context.Context, query string) (err error) {
-	defer WrapWithFuncParams(&err, ctx, query)
-
-	return New("invalid")
-}
-
-// counter is a mutable function parameter
+// counter is a mutable function parameter of newWithFuncParams
 type counter struct{ N int }
-
-// incrementWithFuncParams returns an error wrapped with its call stack
-// and a pointer parameter that the caller may modify afterwards
-func incrementWithFuncParams(c *counter) (err error) {
-	defer WrapWithFuncParams(&err, c)
-
-	return New("overflow")
-}
 
 // panicWithFuncParams recovers its panic as error
 // wrapped with the debug stack and its function parameter
@@ -1318,13 +1284,13 @@ func panicWithFuncParams(secret string) (err error) {
 	panic("boom")
 }
 
-// panicAfterSettingResult sets its result error before panicking
-// with an error that has a call stack
-func panicAfterSettingResult() (err error) {
+// panicAfterResult sets its result error to result before panicking
+// with p, the panic is recovered by RecoverPanicAsError
+func panicAfterResult(result error, p any) (err error) {
 	defer RecoverPanicAsError(&err)
 
-	err = New("first")
-	panic(New("boom"))
+	err = result
+	panic(p)
 }
 
 func TestMessageWithoutCallStacks(t *testing.T) {
@@ -1334,12 +1300,12 @@ func TestMessageWithoutCallStacks(t *testing.T) {
 
 	// The context parameter renders differently after cancel
 	ctx, cancel := context.WithCancel(context.Background())
-	canceledParamErr := fmt.Errorf("service: %w", queryWithContext(ctx, "SECRET QUERY"))
+	canceledParamErr := fmt.Errorf("service: %w", newWithFuncParams("invalid", ctx, "SECRET QUERY"))
 	cancel()
 
 	// The pointer parameter renders differently after the modification
 	c := &counter{N: 1}
-	modifiedParamErr := Errorf("increment: %w", incrementWithFuncParams(c))
+	modifiedParamErr := Errorf("increment: %w", newWithFuncParams("overflow", c))
 	c.N = 2
 
 	tests := []struct {
@@ -1385,12 +1351,12 @@ func TestMessageWithoutCallStacks(t *testing.T) {
 		},
 		{
 			name: "WrapWithFuncParams with KeepSecret",
-			err:  loginWithFuncParams("alice", "hunter2"),
+			err:  newWithFuncParams("login failed", "alice", KeepSecret("hunter2")),
 			want: "login failed",
 		},
 		{
 			name: "Errorf wrapping WrapWithFuncParams",
-			err:  Errorf("authenticate: %w", loginWithFuncParams("alice", "hunter2")),
+			err:  Errorf("authenticate: %w", newWithFuncParams("login failed", "alice", KeepSecret("hunter2"))),
 			want: "authenticate: login failed",
 		},
 		{
@@ -1474,7 +1440,7 @@ func TestMessageWithoutCallStacks(t *testing.T) {
 		},
 		{
 			name: "RecoverPanicAsError after setting the result",
-			err:  panicAfterSettingResult(),
+			err:  panicAfterResult(New("first"), New("boom")),
 			want: "function returning error (first) panicked with: boom",
 		},
 		{name: "nil pointer error", err: (*ptrError)(nil), want: "<nil>"},
@@ -1482,7 +1448,7 @@ func TestMessageWithoutCallStacks(t *testing.T) {
 			// the hook of the panic error type cleans the previous result,
 			// which must not call Error on a nil pointer
 			name: "RecoverPanicAsError after a nil pointer result",
-			err:  panicAfterNilPointerResult(),
+			err:  panicAfterResult((*ptrError)(nil), "boom"),
 			want: "function returning error (<nil>) panicked with: boom",
 		},
 		{
@@ -1528,7 +1494,7 @@ func TestMessageWithoutCallStacks(t *testing.T) {
 		},
 		{
 			name: "RecoverPanicAsError after a result whose Error method panics",
-			err:  panicAfterPanickingResult(),
+			err:  panicAfterResult(&fieldError{}, "boom"),
 			want: "function returning error (%!v(PANIC=Error method: runtime error: invalid memory address or nil pointer dereference)) panicked with: boom",
 		},
 		{

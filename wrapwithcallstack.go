@@ -123,10 +123,8 @@ func (w *withCallStack) renderedMessage(self error) string {
 		return *m
 	}
 	m := formatError(self)
-	if w.message.CompareAndSwap(nil, &m) {
-		return m
-	}
-	// Another goroutine rendered the message first
+	// Keep the message of another goroutine that rendered it first
+	w.message.CompareAndSwap(nil, &m)
 	return *w.message.Load()
 }
 
