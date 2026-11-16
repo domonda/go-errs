@@ -206,7 +206,7 @@ type withCallStackFuncParams struct {
 }
 
 func (w *withCallStackFuncParams) Error() string {
-	return formatError(w)
+	return w.renderedMessage(w)
 }
 
 func (w *withCallStackFuncParams) CallStackParams() ([]uintptr, []any) {

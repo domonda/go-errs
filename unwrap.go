@@ -228,22 +228,43 @@ func UnwrapCallStack(err error) error {
 // fmt.Errorf (and Errorf) render the Error result of a %w operand into their
 // message when they are called, so the call stack of a wrapped error ends up
 // in the middle of the wrapping error's message. MessageWithoutCallStacks
-// removes the outermost call-stack wrappers, then replaces the Error result
-// of each wrapped error (from Unwrap() error or Unwrap() []error) in the
-// message with the wrapped error's message without call stacks,
-// recursively. This handles fmt.Errorf with one or more %w verbs and
-// errors.Join.
+// removes the outermost call-stack wrappers, then replaces every occurrence
+// of the Error result of each wrapped error (from Unwrap() error or
+// Unwrap() []error) in the message with the wrapped error's message without
+// call stacks, recursively. This handles fmt.Errorf with one or more %w verbs
+// and errors.Join. The call-stack wrappers of this package render their
+// message once and return the same text afterwards, so it matches what
+// a wrapping error copied, even if a function parameter such as
+// a context.Context changed since. The debug stack of a recovered panic
+// (AsErrorWithDebugStack, RecoverPanicAsError,
+// RecoverPanicAsErrorWithFuncParams) is removed as well.
 //
-// A wrapper whose Error method does not contain the Error result of
-// its wrapped error verbatim keeps the message it rendered,
-// including any call stack text it copied in a changed form.
-// The same applies when a wrapped error's message changed after the wrapper
-// rendered it, for example because a function parameter passed to
-// WrapWithFuncParams is a pointer to a value that was modified later.
+// Call stack text that is not reachable by unwrapping stays in the message:
+//   - an error formatted with %v or %s instead of %w,
+//     for example Errorf("context: %v", err), so wrap errors with %w;
+//   - a wrapper whose Error method does not contain the Error result
+//     of its wrapped error verbatim, for example one that reformats it.
 func MessageWithoutCallStacks(err error) string {
 	err = UnwrapCallStack(err)
 	if err == nil {
 		return ""
+	}
+	return removeWrappedCallStacks(err, err.Error())
+}
+
+// messageWithoutCallStacksProvider is implemented by error types
+// of this package that render call stack text into their message
+// without a call-stack wrapper that MessageWithoutCallStacks could unwrap.
+type messageWithoutCallStacksProvider interface {
+	messageWithoutCallStacks() string
+}
+
+// removeWrappedCallStacks returns msg, the Error result of err,
+// with the call stacks of the errors wrapped by err removed.
+// err must not be a call-stack wrapper.
+func removeWrappedCallStacks(err error, msg string) string {
+	if p, ok := err.(messageWithoutCallStacksProvider); ok {
+		return p.messageWithoutCallStacks()
 	}
 	var wrapped []error
 	switch x := err.(type) {
@@ -252,74 +273,48 @@ func MessageWithoutCallStacks(err error) string {
 	case interface{ Unwrap() []error }:
 		wrapped = x.Unwrap()
 	}
-	type wrappedMessage struct{ withStacks, withoutStacks string }
-	var messages []wrappedMessage
+	// Each wrapped error's message with and without call stacks
+	var replacements [][2]string
 	for _, w := range wrapped {
-		if w == nil {
+		if w == nil || isNilPointer(w) {
+			// fmt renders a nil pointer error as "<nil>" (it recovers
+			// the panic of its Error method), so there is nothing to replace
 			continue
 		}
-		m := wrappedMessage{w.Error(), MessageWithoutCallStacks(w)}
-		if m.withStacks != m.withoutStacks {
-			messages = append(messages, m)
+		withStacks := w.Error()
+		var withoutStacks string
+		if _, isCallStack := w.(callStackProvider); isCallStack {
+			withoutStacks = MessageWithoutCallStacks(w)
+		} else {
+			withoutStacks = removeWrappedCallStacks(w, withStacks)
 		}
-	}
-	// Longer messages first, so that the message of a wrapped error which is
-	// also contained in the message of a sibling wrapped error
-	// is not replaced within the sibling's occurrence.
-	slices.SortStableFunc(messages, func(a, b wrappedMessage) int {
-		return len(b.withStacks) - len(a.withStacks)
-	})
-	// Occurrences are searched in the original message and may not overlap,
-	// so wrapped errors with identical messages each replace their own one.
-	msg := err.Error()
-	var replacements []messageReplacement
-	for _, m := range messages {
-		start := indexNotOverlapping(msg, m.withStacks, replacements)
-		if start >= 0 {
-			replacements = append(replacements, messageReplacement{start, start + len(m.withStacks), m.withoutStacks})
+		if withStacks != withoutStacks {
+			replacements = append(replacements, [2]string{withStacks, withoutStacks})
 		}
 	}
 	if len(replacements) == 0 {
 		return msg
 	}
-	slices.SortFunc(replacements, func(a, b messageReplacement) int { return a.start - b.start })
-	var b strings.Builder
-	pos := 0
+	// strings.Replacer replaces all occurrences from left to right
+	// without overlapping and tries the old strings in argument order at
+	// every position. Longer old strings first, so that the message of a
+	// wrapped error which is also contained in the message of a sibling
+	// wrapped error is not replaced within the sibling's occurrence.
+	slices.SortStableFunc(replacements, func(a, b [2]string) int {
+		return len(b[0]) - len(a[0])
+	})
+	oldNew := make([]string, 0, 2*len(replacements))
 	for _, r := range replacements {
-		b.WriteString(msg[pos:r.start])
-		b.WriteString(r.text)
-		pos = r.end
+		oldNew = append(oldNew, r[0], r[1])
 	}
-	b.WriteString(msg[pos:])
-	return b.String()
+	return strings.NewReplacer(oldNew...).Replace(msg)
 }
 
-// messageReplacement replaces msg[start:end] with text.
-type messageReplacement struct {
-	start, end int
-	text       string
-}
-
-// indexNotOverlapping returns the index of the first occurrence of substr in s
-// that overlaps none of the replacements, or -1 if there is none.
-func indexNotOverlapping(s, substr string, replacements []messageReplacement) int {
-	from := 0
-search:
-	for from <= len(s)-len(substr) {
-		i := strings.Index(s[from:], substr)
-		if i < 0 {
-			return -1
-		}
-		start, end := from+i, from+i+len(substr)
-		for _, r := range replacements {
-			if start < r.end && r.start < end {
-				from = r.end
-				continue search
-			}
-		}
-		return start
-	}
-	return -1
+// isNilPointer reports whether err is a non-nil interface
+// holding a nil pointer, whose Error method usually panics.
+func isNilPointer(err error) bool {
+	v := reflect.ValueOf(err)
+	return v.Kind() == reflect.Pointer && v.IsNil()
 }
 
 // IsType returns if err or any unwrapped error

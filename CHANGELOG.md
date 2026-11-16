@@ -16,8 +16,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `errs.Errorf("context: %w", errs.New("cause"))` still had the inner call
   stack in the middle of its message; `MessageWithoutCallStacks` returns
   `"context: cause"`. It handles `fmt.Errorf` with one or more `%w`
-  and `errors.Join`. A wrapper that reformats its wrapped error's message
-  keeps what it rendered.
+  and `errors.Join`, and removes the `debug.Stack()` text of recovered
+  panics. An error formatted with `%v` instead of `%w`, and a wrapper that
+  reformats its wrapped error's message, keep what they rendered.
+
+### Changed
+
+- The errors of `New`, `Errorf`, `WrapWithCallStack` and the
+  `WrapWith*FuncParams` functions cache the message of their first `Error()`
+  call. Later calls return the same text even if a function parameter,
+  `TrimFilePathPrefix` or `Printer` changed in between, which keeps it
+  identical to the text that `fmt.Errorf` with `%w` copied into a wrapping
+  error, so `MessageWithoutCallStacks` can find and remove it.
+- `AsErrorWithDebugStack`, `RecoverPanicAsError` and
+  `RecoverPanicAsErrorWithFuncParams` return errors of unexported types
+  instead of `fmt.Errorf` results, with the same `Error()` text and
+  `Unwrap()` result.
 
 ## [1.2.0] - 2026-11-04
 

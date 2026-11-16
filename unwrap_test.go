@@ -1,6 +1,7 @@
 package errs
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strings"
@@ -1194,6 +1195,12 @@ type upperError struct{ wrapped error }
 func (e upperError) Error() string { return strings.ToUpper(e.wrapped.Error()) }
 func (e upperError) Unwrap() error { return e.wrapped }
 
+// ptrError is an error with a pointer receiver,
+// its Error method panics for a nil pointer
+type ptrError struct{ msg string }
+
+func (e *ptrError) Error() string { return e.msg }
+
 // firstOfErrors is a multi-error that renders only its first error
 type firstOfErrors []error
 
@@ -1218,10 +1225,56 @@ func sameLineErrors(n int) []error {
 	return errs
 }
 
+// queryWithContext returns an error wrapped with its call stack
+// and a context and a query as function parameters
+func queryWithContext(ctx context.Context, query string) (err error) {
+	defer WrapWithFuncParams(&err, ctx, query)
+
+	return New("invalid")
+}
+
+// counter is a mutable function parameter
+type counter struct{ N int }
+
+// incrementWithFuncParams returns an error wrapped with its call stack
+// and a pointer parameter that the caller may modify afterwards
+func incrementWithFuncParams(c *counter) (err error) {
+	defer WrapWithFuncParams(&err, c)
+
+	return New("overflow")
+}
+
+// panicWithFuncParams recovers its panic as error
+// wrapped with the debug stack and its function parameter
+func panicWithFuncParams(secret string) (err error) {
+	defer RecoverPanicAsErrorWithFuncParams(&err, secret)
+
+	panic("boom")
+}
+
+// panicAfterSettingResult sets its result error before panicking
+// with an error that has a call stack
+func panicAfterSettingResult() (err error) {
+	defer RecoverPanicAsError(&err)
+
+	err = New("first")
+	panic(New("boom"))
+}
+
 func TestMessageWithoutCallStacks(t *testing.T) {
 	inner := New("inner")
 	dups := sameLineErrors(2)
 	require.Equal(t, dups[0].Error(), dups[1].Error(), "errors created on the same line")
+
+	// The context parameter renders differently after cancel
+	ctx, cancel := context.WithCancel(context.Background())
+	canceledParamErr := fmt.Errorf("service: %w", queryWithContext(ctx, "SECRET QUERY"))
+	cancel()
+
+	// The pointer parameter renders differently after the modification
+	c := &counter{N: 1}
+	modifiedParamErr := Errorf("increment: %w", incrementWithFuncParams(c))
+	c.N = 2
 
 	tests := []struct {
 		name string
@@ -1310,6 +1363,54 @@ func TestMessageWithoutCallStacks(t *testing.T) {
 			err:  firstOfErrors{inner, nil, inner},
 			want: "inner",
 		},
+		{
+			// fmt.Errorf recovers the panic of a nil pointer's Error method
+			// and renders "<nil>", so the wrapped nil pointer must be skipped
+			name: "fmt.Errorf wrapping a nil pointer error",
+			err:  fmt.Errorf("wrapped: %w", (*ptrError)(nil)),
+			want: "wrapped: <nil>",
+		},
+		{
+			name: "nil pointer error beside an errs error",
+			err:  fmt.Errorf("%w / %w", (*ptrError)(nil), New("cause")),
+			want: "<nil> / cause",
+		},
+		{
+			name: "context parameter canceled after wrapping",
+			err:  canceledParamErr,
+			want: "service: invalid",
+		},
+		{
+			name: "pointer parameter modified after wrapping",
+			err:  modifiedParamErr,
+			want: "increment: overflow",
+		},
+		{
+			name: "same error wrapped with %w and formatted with %v",
+			err:  fmt.Errorf("%w / %v", inner, inner),
+			want: "inner / inner",
+		},
+		{name: "AsErrorWithDebugStack", err: AsErrorWithDebugStack("boom"), want: "boom"},
+		{
+			name: "AsErrorWithDebugStack of an errs error",
+			err:  AsErrorWithDebugStack(New("boom")),
+			want: "boom",
+		},
+		{
+			name: "RecoverPanicAsErrorWithFuncParams",
+			err:  panicWithFuncParams("SECRET PARAM"),
+			want: "boom",
+		},
+		{
+			name: "Errorf wrapping RecoverPanicAsErrorWithFuncParams",
+			err:  Errorf("handler: %w", panicWithFuncParams("SECRET PARAM")),
+			want: "handler: boom",
+		},
+		{
+			name: "RecoverPanicAsError after setting the result",
+			err:  panicAfterSettingResult(),
+			want: "function returning error (first) panicked with: boom",
+		},
 		{name: "ErrNotFound", err: WrapWithCallStack(ErrNotFound), want: "not found"},
 		{
 			name: "Errorf wrapping ErrNotFound",
@@ -1351,6 +1452,8 @@ func TestMessageWithoutCallStacks(t *testing.T) {
 			assert.NotContains(t, msg, ".go:")
 			assert.NotContains(t, msg, "alice")
 			assert.NotContains(t, msg, "REDACTED")
+			assert.NotContains(t, msg, "SECRET")
+			assert.NotContains(t, msg, "goroutine")
 		})
 	}
 }
@@ -1369,4 +1472,35 @@ func TestMessageWithoutCallStacks_ReformattingWrapper(t *testing.T) {
 	assert.Equal(t, err.Error(), msg)
 	assert.Contains(t, msg, "FAILED\n")
 	assert.Contains(t, msg, ".GO:")
+}
+
+// TestMessageWithoutCallStacks_FormattedWithV documents the limitation
+// that an error formatted with %v instead of %w is not unwrappable,
+// so its call stack stays in the message
+func TestMessageWithoutCallStacks_FormattedWithV(t *testing.T) {
+	// given
+	err := Errorf("context: %v", New("cause"))
+
+	// when
+	msg := MessageWithoutCallStacks(err)
+
+	// then
+	assert.True(t, strings.HasPrefix(msg, "context: cause\n"), msg)
+	assert.Contains(t, msg, "unwrap_test.go:")
+}
+
+// TestMessageWithoutCallStacks_PanicLogOutputUnchanged checks that
+// the Error results of recovered panics still contain the debug stack
+// and the function parameters for the logs
+func TestMessageWithoutCallStacks_PanicLogOutputUnchanged(t *testing.T) {
+	// given
+	err := panicWithFuncParams("SECRET PARAM")
+
+	// when
+	logMsg := err.Error()
+
+	// then
+	assert.True(t, strings.HasPrefix(logMsg, "boom\ngoroutine "), logMsg)
+	assert.Contains(t, logMsg, "SECRET PARAM")
+	assert.Equal(t, "boom", MessageWithoutCallStacks(err))
 }

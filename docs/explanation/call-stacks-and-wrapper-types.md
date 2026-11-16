@@ -132,6 +132,15 @@ values.
 - **Lazy formatting hides cost until print time.** Rendering a deep chain does
   real work (symbol resolution, go-pretty formatting). That is the right place
   for it — you only pay when you actually surface the error.
+- **The first rendering is final.** Each wrapper caches the message of its
+  first `Error()` call and returns it from then on. `fmt.Errorf("…: %w", err)`
+  copies `err.Error()` into its own message when it is called, so caching keeps
+  both texts identical even when a parameter changes later (a canceled
+  `context.Context`, a modified struct behind a pointer).
+  `MessageWithoutCallStacks` relies on that to find and remove the call stack
+  inside the outer message. The flip side: changing `TrimFilePathPrefix`,
+  `Printer` or a parameter after the first `Error()` call does not change
+  that error's message.
 
 ## Related
 
