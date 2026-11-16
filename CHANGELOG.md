@@ -5,6 +5,27 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.1] - 2026-11-16
+
+Documentation only, no behavior changes.
+
+### Added
+
+- How-to guide [Return error messages to clients without call stacks](docs/how-to/return-error-messages-to-clients.md):
+  send `MessageWithoutCallStacks(err)` in HTTP responses and JSON error
+  bodies, decide which errors a client may see at all (the function removes
+  only what `errs` adds, so an `os.Open` path or a database driver message
+  stays), and fix call stacks that survive a `%v` or a reformatting wrapper.
+
+### Fixed
+
+- Documentation that did not match the code: `Errorf` accepts several `%w`
+  verbs (Go 1.20 and later); `RecoverPanicAsError` keeps an error the function
+  had already returned only as message text, it does not wrap it; function
+  parameter values are captured when the `defer` statement runs, not at
+  return; `MessageWithoutCallStacks` removes the call stacks it reaches by
+  unwrapping, not text formatted with `%v`.
+
 ## [1.3.0] - 2026-11-16
 
 ### Added
@@ -182,6 +203,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Initial stable release.
 
+[1.3.1]: https://github.com/domonda/go-errs/compare/v1.3.0...v1.3.1
 [1.3.0]: https://github.com/domonda/go-errs/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/domonda/go-errs/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/domonda/go-errs/compare/v1.0.4...v1.1.0

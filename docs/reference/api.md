@@ -463,6 +463,8 @@ Call stack text that is not reachable by unwrapping stays in the message:
 
 Compared with `UnwrapCallStack` (outermost wrappers only) and `Root` (innermost
 error, drops the context), `MessageWithoutCallStacks` keeps the full message.
+For a step-by-step guide, including which errors to show clients at all, see
+[return-error-messages-to-clients.md](../how-to/return-error-messages-to-clients.md).
 
 ### `func Has[T error](err error) bool`
 

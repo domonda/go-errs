@@ -24,7 +24,7 @@ Full structured documentation lives in [`docs/`](docs/README.md), organized with
 the [Diataxis](https://diataxis.fr) framework:
 
 - **Tutorial** — [Getting started](docs/tutorials/getting-started.md): install to a real multi-frame error trace
-- **How-to guides** — [wrap with parameters](docs/how-to/wrap-errors-with-function-parameters.md), [redact secrets](docs/how-to/redact-sensitive-parameters.md), [not-found & context errors](docs/how-to/handle-not-found-and-context-errors.md), [recover panics](docs/how-to/recover-panics-as-errors.md), [Sentry](docs/how-to/send-stack-traces-to-sentry.md), [the go-errs-wrap CLI](docs/how-to/manage-wrapping-with-go-errs-wrap.md)
+- **How-to guides** — [wrap with parameters](docs/how-to/wrap-errors-with-function-parameters.md), [redact secrets](docs/how-to/redact-sensitive-parameters.md), [not-found & context errors](docs/how-to/handle-not-found-and-context-errors.md), [recover panics](docs/how-to/recover-panics-as-errors.md), [client error messages](docs/how-to/return-error-messages-to-clients.md), [Sentry](docs/how-to/send-stack-traces-to-sentry.md), [the go-errs-wrap CLI](docs/how-to/manage-wrapping-with-go-errs-wrap.md)
 - **Reference** — [package API](docs/reference/api.md), [configuration](docs/reference/configuration.md), [go-errs-wrap CLI](docs/reference/go-errs-wrap.md)
 - **Explanation** — [call stacks & wrapper types](docs/explanation/call-stacks-and-wrapper-types.md), [Sentry interop](docs/explanation/sentry-stack-trace-interop.md), [secret redaction](docs/explanation/secret-redaction-and-pretty-printing.md)
 
@@ -430,7 +430,8 @@ Which one do I use?
   results, validation messages. Wrap errors with `%w`: an error formatted
   with `%v` or `%s` is plain text in the outer message and keeps its call
   stack, as does the text of a wrapper that reformats its wrapped error's
-  message (see [api.md](docs/reference/api.md#func-messagewithoutcallstackserr-error-string)).
+  message (see [api.md](docs/reference/api.md#func-messagewithoutcallstackserr-error-string)
+  and the how-to [Return error messages to clients](docs/how-to/return-error-messages-to-clients.md)).
 
 ```go
 err := errs.Errorf("invalid from_date: %w", errs.New("month out of range"))

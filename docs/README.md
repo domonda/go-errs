@@ -23,6 +23,7 @@ Recipes for a specific goal, assuming you know the basics.
 - [Redact sensitive parameters](how-to/redact-sensitive-parameters.md)
 - [Handle not-found and context errors](how-to/handle-not-found-and-context-errors.md)
 - [Recover panics as errors](how-to/recover-panics-as-errors.md)
+- [Return error messages to clients without call stacks](how-to/return-error-messages-to-clients.md)
 - [Send stack traces to Sentry](how-to/send-stack-traces-to-sentry.md)
 - [Manage wrapping with go-errs-wrap](how-to/manage-wrapping-with-go-errs-wrap.md)
 
