@@ -1210,6 +1210,17 @@ func panicAfterNilPointerResult() (err error) {
 	panic("boom")
 }
 
+// panicAfterWrappedNilPointerResult panics after setting its result
+// to a nil pointer error that WrapWithFuncParams wraps before
+// RecoverPanicAsError recovers the panic
+func panicAfterWrappedNilPointerResult(x int) (err error) {
+	defer RecoverPanicAsError(&err)
+	defer WrapWithFuncParams(&err, x)
+
+	err = (*ptrError)(nil)
+	panic("boom")
+}
+
 // firstOfErrors is a multi-error that renders only its first error
 type firstOfErrors []error
 
@@ -1432,6 +1443,25 @@ func TestMessageWithoutCallStacks(t *testing.T) {
 			name: "AsErrorWithDebugStack of a nil pointer error",
 			err:  fmt.Errorf("x: %w", AsErrorWithDebugStack(error((*ptrError)(nil)))),
 			want: "x: <nil>",
+		},
+		{
+			name: "call-stack wrapper of a nil pointer error",
+			err:  WrapWithCallStack((*ptrError)(nil)),
+			want: "<nil>",
+		},
+		{
+			// WrapWithFuncParams wraps the nil pointer result before
+			// RecoverPanicAsError keeps it as the previous result
+			name: "RecoverPanicAsError after a wrapped nil pointer result",
+			err:  panicAfterWrappedNilPointerResult(1),
+			want: "function returning error (<nil>) panicked with: boom",
+		},
+		{
+			// fmt.Errorf recovers the panic of the wrapper's Error method
+			// and renders it into the message, which has no call stack
+			name: "fmt.Errorf wrapping a call-stack wrapper of a nil pointer error",
+			err:  fmt.Errorf("x: %w", WrapWithCallStack((*ptrError)(nil))),
+			want: "x: %!v(PANIC=Error method: runtime error: invalid memory address or nil pointer dereference)",
 		},
 		{name: "ErrNotFound", err: WrapWithCallStack(ErrNotFound), want: "not found"},
 		{

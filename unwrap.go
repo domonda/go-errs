@@ -193,7 +193,8 @@ func UnwrapCallStack(err error) error {
 // MessageWithoutCallStacks returns the message of err with every call stack
 // and function parameter block of this package removed, at every level
 // of the error tree. It returns "" for a nil err and "<nil>",
-// like fmt, for a nil pointer whose Error method panics.
+// like fmt, for a nil pointer whose Error method panics,
+// also when a call-stack wrapper of this package wraps it.
 //
 // The Error method of errors created by New, Errorf, WrapWithCallStack and
 // WrapWithFuncParams appends the call stack and function parameters to the
@@ -256,6 +257,10 @@ func MessageWithoutCallStacks(err error) string {
 	if err == nil {
 		return ""
 	}
+	if isNilPointer(err) {
+		// A call-stack wrapper of a nil pointer, whose Error method panics
+		return fmt.Sprint(err)
+	}
 	return removeWrappedCallStacks(err, err.Error())
 }
 
@@ -283,9 +288,10 @@ func removeWrappedCallStacks(err error, msg string) string {
 	// Each wrapped error's message with and without call stacks
 	var replacements [][2]string
 	for _, w := range wrapped {
-		if w == nil || isNilPointer(w) {
-			// fmt renders a nil pointer error as "<nil>" (it recovers
-			// the panic of its Error method), so there is nothing to replace
+		if w == nil || isNilPointer(w) || isNilPointer(UnwrapCallStack(w)) {
+			// fmt renders a nil pointer error as "<nil>" and the call-stack
+			// wrapper of one as "%!v(PANIC=Error method: ...)" (it recovers
+			// the panic of their Error methods), so there is nothing to replace
 			continue
 		}
 		withStacks := w.Error()
