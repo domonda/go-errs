@@ -33,11 +33,11 @@ func New(text string) error {
 
 // Errorf wraps the result of fmt.Errorf with the current call stack.
 //
-// If the format specifier includes a %w verb with an error operand,
-// the returned error will implement an Unwrap method returning the operand. It is
-// invalid to include more than one %w verb or to supply it with an operand
-// that does not implement the error interface. The %w verb is otherwise
-// a synonym for %v.
+// If the format specifier includes %w verbs with error operands,
+// errors.Is and errors.As find each of the operands.
+// It is invalid to supply a %w verb with an operand
+// that does not implement the error interface.
+// The %w verb is otherwise a synonym for %v.
 func Errorf(format string, a ...any) error {
 	return WrapWithCallStackSkip(1, fmt.Errorf(format, a...))
 }
