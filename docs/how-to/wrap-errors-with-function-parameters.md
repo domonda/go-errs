@@ -32,7 +32,10 @@ returns an error, so failures carry their context into your logs.
    on every path.
 
 2. Return errors normally. Any non-nil error is wrapped with the stack frame and
-   the parameter values at return time. A returned error renders as:
+   the parameter values. Go evaluates the arguments of a deferred call when the
+   `defer` statement runs, so the error shows the values the parameters had at
+   the `defer` line, not values assigned to them later in the function. A
+   returned error renders as:
 
    ```
    invalid age

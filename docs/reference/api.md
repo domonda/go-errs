@@ -425,9 +425,10 @@ sentinel are unequal, but their `UnwrapCallStack` results are equal).
 
 ### `func MessageWithoutCallStacks(err error) string`
 
-Returns the message of `err` with every call stack and function parameter
-block of this package removed, at every level of the error tree, or `""` for a
-nil `err`. Use it for messages handed to clients (HTTP responses, MCP tool
+Returns the message of `err` with the call stacks and function parameter
+blocks of this package removed from every error it reaches by unwrapping, at
+every level of the error tree, or `""` for a nil `err`. Call stack text it
+cannot reach by unwrapping stays in the message (see below). Use it for messages handed to clients (HTTP responses, MCP tool
 results, validation messages), where call stacks would leak source paths, line
 numbers and function arguments.
 

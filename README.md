@@ -14,6 +14,7 @@ Go error wrapping with call-stack and function parameter capture.
 - **Error wrapping compatible** - Works seamlessly with `errors.Is`, `errors.As`, and `errors.Unwrap`
 - **Helper utilities** - Common patterns for NotFound errors, context errors, and panic recovery
 - **Customizable formatting** - Control how sensitive data appears in error messages
+- **Messages without call stacks** - `MessageWithoutCallStacks` removes the call stacks and function parameters of errors wrapped with `%w` from a message, for HTTP responses and other text that leaves the service
 - **Iterator support** - Convert errors to `iter.Seq` and `iter.Seq2` iterators
 - **Sentry stack traces** - Wrapped errors expose their call stack to `sentry-go` out of the box, no extra glue code
 
@@ -720,7 +721,7 @@ hub.CaptureException(err) // err's call stack shows up in the Sentry event
 
 - Zero-allocation error wrapping for functions with 0-10 parameters (using specialized functions)
 - Efficient call stack capture using `runtime.Callers`
-- Lazy error message formatting - only formats on the first `Error()` call, which caches the message
+- Lazy call stack and parameter formatting - only rendered on the first `Error()` call, which caches the message
 - Configurable stack depth to balance detail vs memory usage
 
 ## Examples

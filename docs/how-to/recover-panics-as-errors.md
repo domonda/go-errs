@@ -22,8 +22,9 @@ parameters.
 
    If the function panics, `err` is set to the panic value converted to an
    error and wrapped with `debug.Stack()`. If the function was already returning
-   a non-nil error when the panic happened, the two are combined into
-   `function returning error (…) panicked with: …`.
+   a non-nil error when the panic happened, the message includes both:
+   `function returning error (…) panicked with: …`. Only the panic error is
+   wrapped, so `errors.Is`/`errors.As` do not find the earlier error.
 
 2. To also record the function's parameters, use the `WithFuncParams` variant:
 

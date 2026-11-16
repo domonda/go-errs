@@ -24,8 +24,11 @@ production.
 
 ## The approach
 
-`errs` captures the call stack at the moment an error is wrapped and defers all
-formatting until `Error()` is called. Two things make this cheap:
+`errs` captures the call stack at the moment an error is wrapped and defers
+rendering the call stack and parameters until the first `Error()` call. (The
+message of the wrapped error itself, such as the text `Errorf` passes to
+`fmt.Errorf`, is formatted when the error is created.) Two things make this
+cheap:
 
 - **Program counters, not text.** Capture stores a `[]uintptr` from
   `runtime.Callers`. Resolving those to file/line/function names via
@@ -36,10 +39,10 @@ formatting until `Error()` is called. Two things make this cheap:
   (default 32) and slices it down to the frames actually filled.
 
 ```
-error created/wrapped                 error printed (Error())
+error created/wrapped                 first Error() call
 ────────────────────                  ───────────────────────
 runtime.Callers  ──►  []uintptr  ──►  runtime.CallersFrames  ──►  "func\n    file:line"
-   (cheap, eager)     (stored)             (lazy, on demand)
+   (cheap, eager)     (stored)             (lazy, once)               (cached)
 ```
 
 ### Two wrapper types
@@ -47,15 +50,17 @@ runtime.Callers  ──►  []uintptr  ──►  runtime.CallersFrames  ──�
 There are two internal wrappers, layered by embedding:
 
 ```
-withCallStack                    withCallStackFuncParams
-├── err        error             ├── withCallStack   (embedded)
-└── callStack  []uintptr         │   ├── err        error
-                                 │   └── callStack  []uintptr
-                                 └── params  []any
+withCallStack                             withCallStackFuncParams
+├── err        error                      ├── withCallStack   (embedded)
+├── callStack  []uintptr                  │   ├── err        error
+└── message    atomic.Pointer[string]     │   ├── callStack  []uintptr
+                                          │   └── message    atomic.Pointer[string]
+                                          └── params  []any
 ```
 
 - `withCallStack` carries just the stack. It backs `New`, `Errorf`,
-  `WrapWithCallStack`, and `WrapWithCallStackSkip`.
+  `WrapWithCallStack`, and `WrapWithCallStackSkip`. Its `message` field
+  caches the text of the first `Error()` call (see the trade-offs below).
 - `withCallStackFuncParams` embeds `withCallStack` and adds the captured
   parameter values. It backs the `WrapWith*FuncParams` family.
 
