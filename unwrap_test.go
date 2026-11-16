@@ -1201,6 +1201,15 @@ type ptrError struct{ msg string }
 
 func (e *ptrError) Error() string { return e.msg }
 
+// panicAfterNilPointerResult panics after setting its result
+// to a nil pointer error, the result is recovered by RecoverPanicAsError
+func panicAfterNilPointerResult() (err error) {
+	defer RecoverPanicAsError(&err)
+
+	err = (*ptrError)(nil)
+	panic("boom")
+}
+
 // firstOfErrors is a multi-error that renders only its first error
 type firstOfErrors []error
 
@@ -1410,6 +1419,19 @@ func TestMessageWithoutCallStacks(t *testing.T) {
 			name: "RecoverPanicAsError after setting the result",
 			err:  panicAfterSettingResult(),
 			want: "function returning error (first) panicked with: boom",
+		},
+		{name: "nil pointer error", err: (*ptrError)(nil), want: "<nil>"},
+		{
+			// the hook of the panic error type cleans the previous result,
+			// which must not call Error on a nil pointer
+			name: "RecoverPanicAsError after a nil pointer result",
+			err:  panicAfterNilPointerResult(),
+			want: "function returning error (<nil>) panicked with: boom",
+		},
+		{
+			name: "AsErrorWithDebugStack of a nil pointer error",
+			err:  fmt.Errorf("x: %w", AsErrorWithDebugStack(error((*ptrError)(nil)))),
+			want: "x: <nil>",
 		},
 		{name: "ErrNotFound", err: WrapWithCallStack(ErrNotFound), want: "not found"},
 		{

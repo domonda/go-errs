@@ -2,6 +2,7 @@ package errs
 
 import (
 	"errors"
+	"fmt"
 	"reflect"
 	"slices"
 	"strings"
@@ -191,7 +192,8 @@ func UnwrapCallStack(err error) error {
 
 // MessageWithoutCallStacks returns the message of err with every call stack
 // and function parameter block of this package removed, at every level
-// of the error tree. It returns "" for a nil err.
+// of the error tree. It returns "" for a nil err and "<nil>",
+// like fmt, for a nil pointer whose Error method panics.
 //
 // The Error method of errors created by New, Errorf, WrapWithCallStack and
 // WrapWithFuncParams appends the call stack and function parameters to the
@@ -245,6 +247,11 @@ func UnwrapCallStack(err error) error {
 //   - a wrapper whose Error method does not contain the Error result
 //     of its wrapped error verbatim, for example one that reformats it.
 func MessageWithoutCallStacks(err error) string {
+	if isNilPointer(err) {
+		// A nil pointer's Error method usually panics,
+		// return what fmt renders for it, which is "<nil>" in that case
+		return fmt.Sprint(err)
+	}
 	err = UnwrapCallStack(err)
 	if err == nil {
 		return ""
